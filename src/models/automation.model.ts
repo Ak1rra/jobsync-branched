@@ -1,5 +1,7 @@
 // Automation types and interfaces
 
+import type { UsajobsFilters } from "@/lib/scraper/usajobs/types";
+
 export type AutomationStatus = "active" | "paused";
 export type AutomationRunStatus =
   | "running"
@@ -11,7 +13,7 @@ export type AutomationRunStatus =
   | "rate_limited"
   | "cancelled";
 export type DiscoveryStatus = "new" | "accepted" | "dismissed";
-export type JobBoard = "greenhouse" | "lever" | "ashby";
+export type JobBoard = "greenhouse" | "lever" | "ashby" | "usajobs";
 
 export interface GreenhouseCompany {
   name: string;
@@ -54,16 +56,34 @@ export interface AshbySourceConfig
   companies: AshbyCompany[];
 }
 
+// USAJOBS is query-based, not a company watchlist: there is no `companies`.
+// The server-side filters (UsajobsFilters) narrow the API query; the shared
+// targetTitles/keywords/locations/strictLocation/topK/saveUnanalyzed fields
+// drive the same client-side ranking pipeline as the other boards.
+export interface UsajobsSourceConfig
+  extends Omit<GreenhouseSourceConfig, "companies">,
+    UsajobsFilters {}
+
 export interface SourceConfig {
   greenhouse?: GreenhouseSourceConfig;
   lever?: LeverSourceConfig;
   ashby?: AshbySourceConfig;
+  usajobs?: UsajobsSourceConfig;
 }
 
-// Plain, dependency-free board list. Do NOT import this from ats/registry.ts
-// (that pulls the network-calling search fns into client bundles). Both the
-// client-imported schema and the scheduler import it here.
+// Plain, dependency-free list of the company-watchlist boards. Do NOT import this from ats/registry.ts
+// (that pulls the network-calling search fns into client bundles). The
+// company/watchlist UIs import it here; the scheduler iterates RUNNABLE_BOARDS
+// below.
 export const ATS_BOARDS: JobBoard[] = ["greenhouse", "lever", "ashby"];
+
+// Query-based boards: one search over the source config, no company watchlist.
+// Deliberately NOT in ATS_BOARDS, whose consumers (watchlist/company UIs) key
+// per-company data by board.
+export const QUERY_BOARDS: JobBoard[] = ["usajobs"];
+
+// Every board a scheduled or manual run can execute.
+export const RUNNABLE_BOARDS: JobBoard[] = [...ATS_BOARDS, ...QUERY_BOARDS];
 
 // Boards that used to exist and were removed. Their Automation rows stay in
 // the database; the UI marks them retired and only offers pause/delete.
@@ -154,4 +174,5 @@ export interface ScrapedJobData {
   employmentType?: string;
   isRemote?: boolean;
   workplaceType?: string;
+  dueDate?: string; // ISO; overrides the default due-date window when valid
 }

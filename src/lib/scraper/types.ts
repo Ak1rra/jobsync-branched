@@ -9,6 +9,9 @@ export interface JobDetails {
   employmentType?: string;
   isRemote?: boolean;
   workplaceType?: string;
+  // ISO date the posting closes to applications, when the source reports one
+  // (USAJOBS). Absent => the persistence mapper's default due-date window.
+  dueDate?: string;
 }
 
 export type ScraperError =

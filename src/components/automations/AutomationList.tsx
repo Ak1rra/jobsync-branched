@@ -36,6 +36,8 @@ import {
 } from "lucide-react";
 import type { AutomationWithResume } from "@/models/automation.model";
 import { isRetiredBoard } from "@/models/automation.model";
+import { boardName } from "./ats-search-step/types";
+import { summarizeUsajobsFilters } from "./ats-search-step/usajobsConfig";
 import {
   deleteAutomation,
   pauseAutomation,
@@ -135,6 +137,11 @@ export function AutomationList({
           })();
           const atsCompanies: { name: string; token: string }[] =
             ats?.companies ?? [];
+          // USAJOBS has no companies; its search filters are summarized instead.
+          const queryRows =
+            automation.jobBoard === "usajobs" && ats
+              ? summarizeUsajobsFilters(ats)
+              : [];
           const atsTitles: string[] = ats?.targetTitles ?? [];
           const atsLocations: string[] = ats?.locations ?? [];
           const atsKeywords: string[] = ats?.keywords ?? [];
@@ -155,7 +162,7 @@ export function AutomationList({
                     {automation.name}
                   </Link>
                   <Badge variant="outline" className="capitalize">
-                    {automation.jobBoard}
+                    {boardName(automation.jobBoard)}
                   </Badge>
                   {retired ? (
                     <Badge variant="destructive">Retired</Badge>
@@ -202,6 +209,17 @@ export function AutomationList({
                       )}
                     </div>
                     <div className="flex flex-wrap gap-x-6 gap-y-1">
+                      {queryRows.slice(0, 4).map((row) => (
+                        <span key={row.label}>
+                          <span className="font-medium text-foreground">
+                            {row.label}:
+                          </span>{" "}
+                          {row.value}
+                        </span>
+                      ))}
+                      {queryRows.length > 4 && (
+                        <span>+{queryRows.length - 4} more filters</span>
+                      )}
                       <span>
                         <span className="font-medium text-foreground">
                           Titles:

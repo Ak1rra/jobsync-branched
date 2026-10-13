@@ -1,6 +1,8 @@
 import { APP_CONSTANTS } from "@/lib/constants";
 import type { JobBoard, LeverHost } from "@/models/automation.model";
 
+const USAJOBS_SITE_URL = "https://www.usajobs.gov";
+
 // Public job-board URL for a company. Lever's public posting host
 // (jobs.lever.co / jobs.eu.lever.co) is region-specific and differs from its
 // API host, so it's resolved from the company's persisted `host`.
@@ -8,6 +10,10 @@ export function companyBoardUrl(
   jobBoard: JobBoard,
   company: { token: string; host?: LeverHost },
 ): string {
+  // USAJOBS is query-based: there are no company boards. Callers should not ask,
+  // but the Greenhouse fallthrough below would build a bogus URL, so answer
+  // with the site root instead.
+  if (jobBoard === "usajobs") return USAJOBS_SITE_URL;
   if (jobBoard === "lever") {
     const base =
       company.host === "eu"

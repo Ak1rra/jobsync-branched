@@ -134,6 +134,8 @@ Set up automations that search for new jobs on a schedule and AI-match them agai
 
 - **Ashby** — same company-tracking workflow, backed by a built-in directory of 1,860+ companies (or paste a board URL). No API key required.
 
+- **USAJOBS** — search US federal job announcements by keyword, position title, location, agency, occupational series, salary, grade, hiring path and more, with the same local ranking and AI matching. Requires a free USAJOBS API key and the email it was registered with, saved under Settings → API Keys (or via `USAJOBS_API_KEY` / `USAJOBS_USER_AGENT_EMAIL`). The announcement's closing date becomes the job's due date.
+
 More job board sources are on the way. Discovered jobs are surfaced for review — accept the ones you like to promote them into your job tracker, or dismiss the rest.
 
 ### MCP Server (AI Agent Integration)

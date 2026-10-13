@@ -30,6 +30,16 @@ function normalizeJobType(employmentType?: string): string {
   return JOB_TYPE_ALIASES[key] ?? "FT";
 }
 
+// A source-reported closing date (USAJOBS) wins; everything else, and any
+// unparseable value, keeps the default window.
+function sourceDueDate(raw?: string): Date {
+  if (raw) {
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return addDays(new Date(), APP_CONSTANTS.DEFAULT_JOB_DUE_DAYS);
+}
+
 export function normalizeWorkplaceType(isRemote?: boolean): string | null {
   return isRemote ? "REMOTE" : null;
 }
@@ -109,7 +119,7 @@ export async function mapScrapedJobToJobRecord(
     companyId: company.id,
     jobSourceId: source.id,
     locationId: location?.id ?? null,
-    dueDate: addDays(new Date(), APP_CONSTANTS.DEFAULT_JOB_DUE_DAYS),
+    dueDate: sourceDueDate(scrapedJob.dueDate),
     matchScore,
     matchData,
     discoveryStatus: "new",

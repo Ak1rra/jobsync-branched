@@ -45,3 +45,11 @@ describe("companyBoardUrl", () => {
     );
   });
 });
+
+describe("companyBoardUrl - usajobs", () => {
+  it("never builds a Greenhouse URL for the query-based USAJOBS board", () => {
+    const url = companyBoardUrl("usajobs", { token: "usajobs" });
+    expect(url).toBe("https://www.usajobs.gov");
+    expect(url).not.toContain(APP_CONSTANTS.GREENHOUSE_BOARD_URL);
+  });
+});

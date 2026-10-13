@@ -1,11 +1,33 @@
 import { APP_CONSTANTS } from "@/lib/constants";
 import type { CreateAutomationInput } from "@/models/automation.schema";
+import type { JobBoard } from "@/models/automation.model";
 import type { AtsConfigValue } from "../AtsSearchStep";
+import type {
+  UsajobsConfigValue,
+  WatchlistBoard,
+} from "../ats-search-step/types";
 
-export type AtsKey = "greenhouse" | "lever" | "ashby";
+// Boards that track a company watchlist. USAJOBS is query-based and has its
+// own config (EMPTY_USAJOBS) and search step.
+export type AtsKey = WatchlistBoard;
+
+export function isQueryBoard(board: JobBoard): board is "usajobs" {
+  return board === "usajobs";
+}
 
 export const EMPTY_ATS: AtsConfigValue = {
   companies: [],
+  targetTitles: [],
+  keywords: [],
+  locations: [],
+  strictLocation: false,
+  topK: APP_CONSTANTS.MAX_JOBS_PER_RUN,
+  saveUnanalyzed: true,
+};
+
+// No search criterion yet, so the wizard blocks "Next" until one is entered
+// (the schema requires at least one).
+export const EMPTY_USAJOBS: UsajobsConfigValue = {
   targetTitles: [],
   keywords: [],
   locations: [],
@@ -34,7 +56,10 @@ export function parseEditSourceConfig(
   if (!sc) return undefined;
   try {
     const parsed = JSON.parse(sc);
-    return parsed?.greenhouse || parsed?.lever || parsed?.ashby
+    return parsed?.greenhouse ||
+      parsed?.lever ||
+      parsed?.ashby ||
+      parsed?.usajobs
       ? parsed
       : undefined;
   } catch {

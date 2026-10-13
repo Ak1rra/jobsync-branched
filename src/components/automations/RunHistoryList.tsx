@@ -38,6 +38,7 @@ import type { AutomationRun, FunnelStage } from "@/models/automation.model";
 import { DeleteAlertDialog } from "@/components/DeleteAlertDialog";
 import { deleteAutomationRun } from "@/actions/automation.actions";
 import { toastSuccess, toastError } from "@/lib/toast";
+import { describeRunFailure } from "@/lib/notifications/boardError";
 
 interface RunHistoryListProps {
   runs: AutomationRun[];
@@ -237,7 +238,10 @@ export function RunHistoryList({
                             variant="outline"
                             className="max-w-md whitespace-normal"
                           >
-                            {run.blockedReason || run.errorMessage}
+                            {describeRunFailure(
+                              run.errorMessage || null,
+                              run.blockedReason || null,
+                            )}
                           </Badge>
                         )}
                       </TableCell>

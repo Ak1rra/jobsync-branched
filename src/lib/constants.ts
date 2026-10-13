@@ -143,6 +143,18 @@ export const APP_CONSTANTS = {
   ASHBY_FETCH_TIMEOUT_MS: 25_000, // per-board AbortController timeout
   ASHBY_FETCH_CONCURRENCY: 5,
 
+  // USAJOBS (authenticated, query-based search API — one query, not a watchlist)
+  USAJOBS_BASE_URL: "https://data.usajobs.gov/api/search",
+  USAJOBS_HOST: "data.usajobs.gov", // required Host header value
+  USAJOBS_PAGE_SIZE: 50, // ResultsPerPage (API max is 500; Fields=Full is heavy)
+  USAJOBS_MAX_PAGES: 10, // safety ceiling on pages per run
+  USAJOBS_MAX_RESULTS: 500, // safety ceiling on jobs fetched per run
+  USAJOBS_PAGE_DELAY_MS: 150, // politeness delay between sequential pages
+  USAJOBS_FETCH_TIMEOUT_MS: 60_000, // wraps the WHOLE paginated loop incl. retries
+  USAJOBS_MAX_ATTEMPTS: 3, // per page, for 5xx/network/timeout/short 429
+  USAJOBS_RETRY_BASE_DELAY_MS: 500, // exponential backoff base (+ jitter)
+  USAJOBS_RETRY_MAX_DELAY_MS: 5_000, // cap on any single backoff / Retry-After wait
+
   // MCP server settings
   MCP_DUPLICATE_WINDOW_DAYS: 30,
   MCP_TOKEN_EXPIRY_PRESETS: [30, 90, 365] as const,

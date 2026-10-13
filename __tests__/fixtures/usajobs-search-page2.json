@@ -1,0 +1,39 @@
+{
+  "LanguageCode": "EN",
+  "SearchParameters": { "Keyword": "information technology" },
+  "SearchResult": {
+    "SearchResultCount": 2,
+    "SearchResultCountAll": 5,
+    "SearchResultItems": [
+      {
+        "MatchedObjectId": "812345603",
+        "MatchedObjectDescriptor": {
+          "PositionID": "26-IT-4",
+          "PositionTitle": "Cybersecurity Specialist",
+          "PositionURI": "https://www.usajobs.gov:443/job/812345603",
+          "PositionLocationDisplay": "Denver, Colorado",
+          "OrganizationName": "Department of the Interior",
+          "PositionSchedule": [{ "Name": "Full-time", "Code": "1" }],
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "100000",
+              "MaximumRange": "100000",
+              "RateIntervalCode": "PA",
+              "Description": "Per Year"
+            }
+          ],
+          "PublicationStartDate": "2026-10-05T00:00:00.0000",
+          "ApplicationCloseDate": "2099-12-01T23:59:59.9970"
+        }
+      },
+      {
+        "MatchedObjectId": "812345604",
+        "MatchedObjectDescriptor": {
+          "PositionTitle": "Item without a link",
+          "OrganizationName": "Department of Nothing"
+        }
+      }
+    ],
+    "UserArea": { "NumberOfPages": "2", "IsRadialSearch": false }
+  }
+}

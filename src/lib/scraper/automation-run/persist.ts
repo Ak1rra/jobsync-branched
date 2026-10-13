@@ -41,6 +41,7 @@ export async function persistDiscoveredJob(
     employmentType: job.employmentType,
     isRemote: job.isRemote,
     workplaceType: job.workplaceType,
+    dueDate: job.dueDate,
   };
 
   const jobRecord = await mapScrapedJobToJobRecord({

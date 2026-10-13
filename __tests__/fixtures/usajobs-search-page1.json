@@ -1,0 +1,94 @@
+{
+  "LanguageCode": "EN",
+  "SearchParameters": { "Keyword": "information technology" },
+  "SearchResult": {
+    "SearchResultCount": 3,
+    "SearchResultCountAll": 5,
+    "SearchResultItems": [
+      {
+        "MatchedObjectId": "812345600",
+        "MatchedObjectDescriptor": {
+          "PositionID": "DE-12345678-26-ABC",
+          "PositionTitle": "IT Specialist (APPSW)",
+          "PositionURI": "https://www.usajobs.gov:443/job/812345600",
+          "ApplyURI": ["https://www.usajobs.gov:443/job/812345600/apply"],
+          "PositionLocationDisplay": "Washington, District of Columbia",
+          "PositionLocation": [
+            { "LocationName": "Washington, District of Columbia" }
+          ],
+          "OrganizationName": "Office of the Chief Information Officer",
+          "DepartmentName": "Department of Veterans Affairs",
+          "JobCategory": [
+            { "Name": "Information Technology Management", "Code": "2210" }
+          ],
+          "JobGrade": [{ "Code": "GS" }],
+          "PositionSchedule": [{ "Name": "Full-time", "Code": "1" }],
+          "PositionOfferingType": [{ "Name": "Permanent", "Code": "15317" }],
+          "QualificationSummary": "You must have one year of specialized experience equivalent to the GS-11 level.",
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "86962.00",
+              "MaximumRange": "113050.00",
+              "RateIntervalCode": "PA",
+              "Description": "Per Year"
+            }
+          ],
+          "PublicationStartDate": "2026-10-01T00:00:00.0000",
+          "ApplicationCloseDate": "2099-12-31T23:59:59.9970",
+          "UserArea": {
+            "Details": {
+              "JobSummary": "Develops and maintains application software.",
+              "MajorDuties": [
+                "Designs and tests software.",
+                "Documents system changes."
+              ],
+              "HiringPath": ["public", "vet"],
+              "WhoMayApply": { "Name": "United States Citizens", "Code": "15514" },
+              "LowGrade": "11",
+              "HighGrade": "12",
+              "SecurityClearance": "Secret",
+              "RemoteIndicator": "False",
+              "TeleworkEligible": "True"
+            }
+          }
+        }
+      },
+      {
+        "MatchedObjectId": "812345601",
+        "MatchedObjectDescriptor": {
+          "PositionID": "26-MIN-1",
+          "PositionTitle": "Biological Science Technician",
+          "PositionURI": "https://www.usajobs.gov:443/job/812345601",
+          "PositionLocationDisplay": "Multiple Locations",
+          "OrganizationName": "Forest Service",
+          "PositionSchedule": [{ "Name": "Part-time", "Code": "2" }],
+          "PositionOfferingType": [{ "Name": "Temporary", "Code": "15318" }],
+          "PositionRemuneration": [
+            {
+              "MinimumRange": "21.50",
+              "MaximumRange": "28.00",
+              "RateIntervalCode": "PH"
+            }
+          ],
+          "PublicationStartDate": "2026-10-03T00:00:00.0000",
+          "ApplicationCloseDate": "2099-11-15T23:59:59.9970",
+          "UserArea": { "Details": { "RemoteIndicator": "True" } }
+        }
+      },
+      {
+        "MatchedObjectId": "812345602",
+        "MatchedObjectDescriptor": {
+          "PositionTitle": "Management Analyst",
+          "PositionURI": "https://www.usajobs.gov:443/job/812345602",
+          "OrganizationName": "Department of Energy",
+          "PositionLocation": [
+            { "LocationName": "Oak Ridge, Tennessee" },
+            { "LocationName": "Oak Ridge, Tennessee" },
+            { "LocationName": "Richland, Washington" }
+          ]
+        }
+      }
+    ],
+    "UserArea": { "NumberOfPages": "2", "IsRadialSearch": false }
+  }
+}

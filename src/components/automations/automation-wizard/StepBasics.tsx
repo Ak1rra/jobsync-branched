@@ -60,10 +60,15 @@ export function StepBasics({
                 </SelectItem>
                 <SelectItem value="lever">Lever (company boards)</SelectItem>
                 <SelectItem value="ashby">Ashby (company boards)</SelectItem>
+                <SelectItem value="usajobs">
+                  USAJOBS (US federal jobs)
+                </SelectItem>
               </SelectContent>
             </Select>
             <FormDescription>
-              Track specific companies&apos; job boards
+              {field.value === "usajobs"
+                ? "Search US federal job announcements by keyword, agency, location and more. Requires a free USAJOBS API key."
+                : "Track specific companies' job boards"}
             </FormDescription>
             <FormMessage />
           </FormItem>
