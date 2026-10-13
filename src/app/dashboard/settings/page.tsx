@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AiSettings from "@/components/settings/AiSettings";
 import AiUsageSettings from "@/components/settings/AiUsageSettings";
 import ApiKeySettings from "@/components/settings/ApiKeySettings";
@@ -11,6 +11,12 @@ import SettingsSidebar, { type SettingsSection } from "@/components/settings/Set
 
 function Settings() {
   const [activeSection, setActiveSection] = useState<SettingsSection>("ai-provider");
+
+  // Deep link from other screens (e.g. the USAJOBS wizard hint). Read after
+  // mount so the server-rendered markup matches.
+  useEffect(() => {
+    if (window.location.hash === "#api-keys") setActiveSection("api-keys");
+  }, []);
 
   return (
     <div className="flex flex-col col-span-3">

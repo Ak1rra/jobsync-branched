@@ -2,6 +2,11 @@ import type { JobBoard } from "@/models/automation.model";
 import { searchGreenhouseJobs } from "../greenhouse";
 import { searchLeverJobs } from "../lever";
 import { searchAshbyJobs } from "../ashby";
+import {
+  searchUsajobsJobs,
+  USAJOBS_BOARD_NAME,
+  USAJOBS_BOARD_TOKEN,
+} from "../usajobs";
 import type { AtsProvider } from "./types";
 
 // Server-only: imports the real network-calling search fns (fetch, p-limit).
@@ -15,4 +20,11 @@ export const ATS_PROVIDERS: Partial<Record<JobBoard, AtsProvider>> = {
   },
   lever: { id: "lever", label: "Lever", search: searchLeverJobs },
   ashby: { id: "ashby", label: "Ashby", search: searchAshbyJobs },
+  usajobs: {
+    id: "usajobs",
+    label: "USAJOBS",
+    boardToken: USAJOBS_BOARD_TOKEN,
+    boardName: USAJOBS_BOARD_NAME,
+    searchQuery: searchUsajobsJobs,
+  },
 };

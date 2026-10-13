@@ -13,6 +13,7 @@ JobSync tracks job applications, resumes and the work you do around them. These 
 - [Contacts](./contacts.md) — track recruiters, interviewers and references, link them to the jobs they touched, and record how you know them.
 - [Companies](./companies.md) — a company's details page with its jobs and contacts, watching a company, and why a company can't be deleted.
 - [Automations](./automations.md) — set up a scheduled search over Greenhouse, Lever and Ashby company boards, fill in the filters that make it work, and handle the jobs it discovers.
+- [USAJOBS automations](./usajobs.md) — search US federal job announcements: get and save a USAJOBS API key, the search filters, paging and rate limits, deduplication and known limitations.
 - [Tasks](./tasks.md) — add to-dos with a priority and due date, find them with the status filter and activity-type panel, mark them done, and start a timed activity from one.
 - [Activities](./activities.md) — time the work you do with a start/stop timer and breaks, log time after the fact, and see your hours on the Dashboard.
 - [Data Backup](./backup.md) — download everything as one zip, import it on any instance, and undo an import.

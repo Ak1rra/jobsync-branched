@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
-import type { CreateAutomationInput } from "@/models/automation.schema";
 import { toastError } from "@/lib/toast";
 import {
   buildIncompleteResumeHint,
@@ -18,7 +17,9 @@ import {
 } from "@/lib/resumeSections";
 import type { AutomationWithResume } from "@/models/automation.model";
 import { AtsSearchStep } from "./AtsSearchStep";
+import { UsajobsSearchStep } from "./UsajobsSearchStep";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import type { WatchlistBoard } from "./ats-search-step/types";
 import { STEPS, type WizardResume } from "./automation-wizard/wizardConfig";
 import { useWizardForm } from "./automation-wizard/useWizardForm";
 import { StepBasics } from "./automation-wizard/StepBasics";
@@ -49,8 +50,11 @@ export function AutomationWizard({
     formValues,
     step,
     isSubmitting,
-    atsKey,
+    queryBoard,
     atsConfig,
+    usajobsConfig,
+    setAtsConfig,
+    setUsajobsConfig,
     takenHours,
     canGoNext,
     nextStep,
@@ -116,17 +120,18 @@ export function AutomationWizard({
               </div>
 
               <div className={step === 1 ? "space-y-4" : "hidden"}>
-                <AtsSearchStep
-                  provider={formValues.jobBoard}
-                  value={atsConfig}
-                  onChange={(next) =>
-                    form.setValue(
-                      "sourceConfig",
-                      { [atsKey]: next } as CreateAutomationInput["sourceConfig"],
-                      { shouldValidate: true },
-                    )
-                  }
-                />
+                {queryBoard ? (
+                  <UsajobsSearchStep
+                    value={usajobsConfig}
+                    onChange={setUsajobsConfig}
+                  />
+                ) : (
+                  <AtsSearchStep
+                    provider={formValues.jobBoard as WatchlistBoard}
+                    value={atsConfig}
+                    onChange={setAtsConfig}
+                  />
+                )}
               </div>
 
               <div className={step === 2 ? "space-y-4" : "hidden"}>
@@ -145,6 +150,7 @@ export function AutomationWizard({
                 <StepReview
                   formValues={formValues}
                   atsConfig={atsConfig}
+                  usajobsConfig={queryBoard ? usajobsConfig : undefined}
                   selectedResume={selectedResume}
                 />
               </div>

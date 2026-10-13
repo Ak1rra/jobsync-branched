@@ -2,7 +2,7 @@ import type {
   Automation,
   FunnelStage,
 } from "@/models/automation.model";
-import type { AtsProvider } from "../ats/types";
+import { isQueryProvider, type AtsProvider } from "../ats/types";
 import { runAtsPipeline } from "../ats/pipeline";
 import type { ScoredJob } from "../ats/pipeline";
 import { dedupeJobs } from "../utils";
@@ -15,7 +15,11 @@ import {
   getDefaultModelForProvider,
   getUserAiSettings,
 } from "./aiSettings";
-import { parseAtsConfig } from "./config";
+import {
+  parseAtsConfig,
+  parseUsajobsConfig,
+  type AtsRunConfig,
+} from "./config";
 import { extractResumeSkills } from "./resumeText";
 import { buildSkillTerms } from "./skillTags";
 import { persistDiscoveredJob, scalePrerank } from "./persist";
@@ -30,18 +34,34 @@ export async function runAtsRun(
   signal?: AbortSignal,
 ): Promise<RunnerResult> {
   const label = `[${provider.label}]`;
-  const config = parseAtsConfig(automation.sourceConfig, automation.jobBoard);
+  // Query-based boards (USAJOBS) have no watchlist: the single query is
+  // accounted as one pseudo-board so everything below (errors, status, board
+  // notifications) is shared with the watchlist boards unchanged.
+  const queryProvider = isQueryProvider(provider) ? provider : null;
+  const queryConfig = queryProvider
+    ? parseUsajobsConfig(automation.sourceConfig)
+    : null;
+  const config: AtsRunConfig | null = queryProvider
+    ? queryConfig && {
+        ...queryConfig.ranking,
+        companies: [
+          { name: queryProvider.boardName, token: queryProvider.boardToken },
+        ],
+      }
+    : parseAtsConfig(automation.sourceConfig, automation.jobBoard);
 
   if (!config || config.companies.length === 0) {
     automationLogger.log(
       automation.id,
       "error",
-      `${label} No companies configured`,
+      queryProvider
+        ? `${label} No valid search configured`
+        : `${label} No companies configured`,
     );
     automationLogger.endRun(automation.id);
     return await finalizeRun(runId, {
       status: "failed",
-      errorMessage: "no_companies",
+      errorMessage: queryProvider ? `${provider.id}_invalid_config` : "no_companies",
       jobsSearched: 0,
       jobsDeduplicated: 0,
       jobsProcessed: 0,
@@ -54,16 +74,30 @@ export async function runAtsRun(
     automationLogger.log(
       automation.id,
       "info",
-      `${label} Fetching ${config.companies.length} companies...`,
+      queryProvider
+        ? `${label} Searching...`
+        : `${label} Fetching ${config.companies.length} companies...`,
     );
 
-    const { jobs, errors } = await provider.search(config.companies);
+    const { jobs, errors, notes } = isQueryProvider(provider)
+      ? await provider.searchQuery({
+          userId: automation.userId,
+          config: queryConfig!.query,
+          signal,
+        })
+      : await provider.search(config.companies);
+
+    for (const note of notes ?? []) {
+      automationLogger.log(automation.id, "warning", `${label} ${note}`);
+    }
 
     for (const err of errors) {
       automationLogger.log(
         automation.id,
         "warning",
-        `${label} Board '${err.token}' ${err.reason} — skipped`,
+        queryProvider
+          ? `${label} ${err.reason}`
+          : `${label} Board '${err.token}' ${err.reason} — skipped`,
       );
     }
 
@@ -75,8 +109,14 @@ export async function runAtsRun(
     }));
     const total = config.companies.length;
 
-    if (errors.length > 0 && errors.length === total) {
-      const message = `All ${total} boards unreachable`;
+    // `jobs.length === 0` is always true here for the watchlist boards (a failed
+    // board contributes no jobs); it only matters for a query that failed
+    // part-way and still returned what it had — that is a partial result, not a
+    // failed run.
+    if (errors.length > 0 && errors.length === total && jobs.length === 0) {
+      const message = queryProvider
+        ? errors[0].reason
+        : `All ${total} boards unreachable`;
       automationLogger.log(automation.id, "error", `${label} ${message}`);
       automationLogger.endRun(automation.id);
       return await finalizeRun(runId, {
@@ -92,7 +132,11 @@ export async function runAtsRun(
     }
 
     const boardNote =
-      errors.length > 0 ? `${errors.length} of ${total} boards unreachable` : null;
+      errors.length === 0
+        ? null
+        : queryProvider
+          ? `search incomplete: ${errors[0].reason}`
+          : `${errors.length} of ${total} boards unreachable`;
     // One place decides the terminal status for every completed path below.
     const outcome = (aiError: string | null) => ({
       status: aiError || boardNote ? ("completed_with_errors" as const) : ("completed" as const),
@@ -106,7 +150,9 @@ export async function runAtsRun(
     automationLogger.log(
       automation.id,
       "success",
-      `${label} Fetched ${jobsSearched} jobs across ${config.companies.length} boards`,
+      queryProvider
+        ? `${label} Fetched ${jobsSearched} jobs`
+        : `${label} Fetched ${jobsSearched} jobs across ${config.companies.length} boards`,
       { jobsSearched },
     );
 

@@ -39,6 +39,7 @@ import { getAiProviders } from "@/lib/ai/provider-registry";
 import { AiProvider } from "@/models/ai.model";
 import { checkOllamaConnection } from "@/utils/ai.utils";
 import { getUserSettings } from "@/actions/userSettings.actions";
+import { UsajobsCredentialsCard } from "./UsajobsCredentialsCard";
 
 interface ProviderConfig {
   id: ApiKeyProvider;
@@ -386,6 +387,7 @@ function ApiKeySettings() {
             </Card>
           );
         })}
+        <UsajobsCredentialsCard keys={keys} onChanged={fetchKeys} />
       </div>
     </div>
   );

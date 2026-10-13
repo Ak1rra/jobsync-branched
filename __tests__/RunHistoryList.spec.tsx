@@ -130,3 +130,53 @@ describe("RunHistoryList", () => {
     expect(onLoadMore).not.toHaveBeenCalled();
   });
 });
+
+describe("RunHistoryList - failure copy", () => {
+  it("explains a USAJOBS run that had no credentials", () => {
+    renderList({
+      runs: [
+        makeRun({ status: "failed", errorMessage: "usajobs_not_configured" }),
+      ],
+    });
+
+    expect(screen.getByText(/USAJOBS is not configured/i)).toBeInTheDocument();
+    expect(screen.queryByText("usajobs_not_configured")).toBeNull();
+  });
+
+  it("explains an invalid USAJOBS search config", () => {
+    renderList({
+      runs: [
+        makeRun({ status: "failed", errorMessage: "usajobs_invalid_config" }),
+      ],
+    });
+
+    expect(screen.getByText(/search settings are invalid/i)).toBeInTheDocument();
+  });
+
+  it("shows other error messages verbatim, as before", () => {
+    renderList({
+      runs: [
+        makeRun({
+          status: "completed_with_errors",
+          errorMessage: "2 of 5 boards unreachable",
+        }),
+      ],
+    });
+
+    expect(screen.getByText("2 of 5 boards unreachable")).toBeInTheDocument();
+  });
+
+  it("prefers the blocked reason over the error message", () => {
+    renderList({
+      runs: [
+        makeRun({
+          status: "blocked",
+          errorMessage: "ignored",
+          blockedReason: "robots disallowed",
+        }),
+      ],
+    });
+
+    expect(screen.getByText("robots disallowed")).toBeInTheDocument();
+  });
+});

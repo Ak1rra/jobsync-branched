@@ -34,6 +34,8 @@ describe("resolveApiKey", () => {
     process.env = { ...OLD_ENV };
     delete process.env.OPENAI_API_KEY;
     delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.USAJOBS_API_KEY;
+    delete process.env.USAJOBS_USER_AGENT_EMAIL;
   });
 
   afterAll(() => {
@@ -121,5 +123,50 @@ describe("resolveApiKey", () => {
 
     expect(result).toBe("env-openai");
     expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+
+  describe("usajobs credentials (outside the AI registry)", () => {
+    it("resolves the key and the registration email from their env vars", async () => {
+      mockFindUnique.mockResolvedValue(null);
+      process.env.USAJOBS_API_KEY = "env-usajobs-key";
+      process.env.USAJOBS_USER_AGENT_EMAIL = "me@example.com";
+
+      expect(await resolveApiKey("user-1", "usajobs")).toBe("env-usajobs-key");
+      expect(await resolveApiKey("user-1", "usajobs_email")).toBe("me@example.com");
+    });
+
+    it("prefers the per-user row over the env var, decrypting the key", async () => {
+      mockFindUnique.mockResolvedValue({ id: "k9", encryptedKey: "cipher", iv: "iv9" });
+      process.env.USAJOBS_API_KEY = "env-usajobs-key";
+
+      expect(await resolveApiKey("user-1", "usajobs")).toBe("decrypted(cipher,iv9)");
+      expect(mockFindUnique).toHaveBeenCalledWith({
+        where: { userId_provider: { userId: "user-1", provider: "usajobs" } },
+      });
+    });
+
+    it("reads a non-sensitive (plaintext) registration email as stored", async () => {
+      mockFindUnique.mockResolvedValue({ id: "k8", encryptedKey: "me@example.com", iv: "" });
+      expect(await resolveApiKey("user-1", "usajobs_email")).toBe("me@example.com");
+    });
+
+    it("envFallback:false returns only what the user saved, never the env var", async () => {
+      mockFindUnique.mockResolvedValue(null);
+      process.env.USAJOBS_API_KEY = "env-usajobs-key";
+
+      expect(
+        await resolveApiKey("user-1", "usajobs", { envFallback: false }),
+      ).toBeUndefined();
+
+      mockFindUnique.mockResolvedValue({ id: "k9", encryptedKey: "cipher", iv: "iv9" });
+      expect(
+        await resolveApiKey("user-1", "usajobs", { envFallback: false }),
+      ).toBe("decrypted(cipher,iv9)");
+    });
+
+    it("is undefined when neither a row nor the env var exists", async () => {
+      mockFindUnique.mockResolvedValue(null);
+      expect(await resolveApiKey("user-1", "usajobs")).toBeUndefined();
+    });
   });
 });

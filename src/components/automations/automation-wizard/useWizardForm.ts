@@ -14,11 +14,14 @@ import {
 import { toastSuccess, toastError } from "@/lib/toast";
 import type { AutomationWithResume, JobBoard } from "@/models/automation.model";
 import type { AtsConfigValue } from "../AtsSearchStep";
+import { isUsajobsConfigValid } from "../ats-search-step/usajobsConfig";
+import type { UsajobsConfigValue } from "../ats-search-step/types";
 import {
   EMPTY_ATS,
+  EMPTY_USAJOBS,
   STEPS,
+  isQueryBoard,
   parseEditSourceConfig,
-  type AtsKey,
 } from "./wizardConfig";
 
 interface UseWizardFormArgs {
@@ -100,16 +103,38 @@ export function useWizardForm({
     }
   };
 
-  const atsKey: AtsKey = formValues.jobBoard;
+  // Watchlist boards (Greenhouse/Lever/Ashby) edit a company config; USAJOBS
+  // edits a search-query config. Each keeps its own block in sourceConfig.
+  const board = formValues.jobBoard;
+  const queryBoard = isQueryBoard(board);
   const atsConfig: AtsConfigValue =
-    formValues.sourceConfig?.[atsKey] ?? EMPTY_ATS;
+    (queryBoard ? undefined : formValues.sourceConfig?.[board]) ?? EMPTY_ATS;
+  const usajobsConfig: UsajobsConfigValue =
+    formValues.sourceConfig?.usajobs ?? EMPTY_USAJOBS;
+
+  // Writing replaces the whole sourceConfig with the active board's block, so
+  // a config left over from a previously selected board is dropped.
+  const setAtsConfig = (next: AtsConfigValue) => {
+    if (queryBoard) return;
+    form.setValue(
+      "sourceConfig",
+      { [board]: next } as CreateAutomationInput["sourceConfig"],
+      { shouldValidate: true },
+    );
+  };
+  const setUsajobsConfig = (next: UsajobsConfigValue) =>
+    form.setValue("sourceConfig", { usajobs: next }, { shouldValidate: true });
 
   const canGoNext = () => {
     switch (step) {
       case 0:
         return (formValues.name?.trim().length ?? 0) > 0;
       case 1:
-        return (atsConfig.companies?.length ?? 0) > 0;
+        // Same rule the schema applies at save: a company for watchlist boards,
+        // a search criterion for USAJOBS.
+        return queryBoard
+          ? isUsajobsConfigValid(usajobsConfig)
+          : (atsConfig.companies?.length ?? 0) > 0;
       case 2:
         return (formValues.resumeId?.length ?? 0) > 0;
       case 3:
@@ -161,8 +186,11 @@ export function useWizardForm({
     formValues,
     step,
     isSubmitting,
-    atsKey,
+    queryBoard,
     atsConfig,
+    usajobsConfig,
+    setAtsConfig,
+    setUsajobsConfig,
     takenHours,
     canGoNext,
     nextStep,
