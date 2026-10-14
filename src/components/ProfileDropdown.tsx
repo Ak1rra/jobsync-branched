@@ -126,7 +126,7 @@ export function ProfileDropdown({
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <a
-              href="https://github.com/Gsync/jobsync/wiki"
+              href="https://github.com/Ak1rra/jobsync-branched/wiki"
               target="_blank"
               rel="noopener noreferrer"
               className="cursor-pointer"

@@ -32,26 +32,26 @@ export function SupportDialog({
           <DialogTitle>Support</DialogTitle>
           <DialogDescription className="space-y-1">
             <a
-              href="https://github.com/Gsync/jobsync/issues"
+              href="https://github.com/Ak1rra/jobsync-branched/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="block text-primary hover:underline"
             >
-              https://github.com/Gsync/jobsync/issues
+              https://github.com/Ak1rra/jobsync-branched/issues
             </a>
             <a
-              href="https://github.com/Gsync/jobsync/discussions"
+              href="https://github.com/Ak1rra/jobsync-branched/discussions"
               target="_blank"
               rel="noopener noreferrer"
               className="block text-primary hover:underline"
             >
-              https://github.com/Gsync/jobsync/discussions
+              https://github.com/Ak1rra/jobsync-branched/discussions
             </a>
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
           <a
-            href="https://github.com/Gsync/jobsync"
+            href="https://github.com/Ak1rra/jobsync-branched"
             target="_blank"
             rel="noopener noreferrer"
             className="group flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 transition-colors hover:bg-amber-500/20"

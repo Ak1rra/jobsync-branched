@@ -65,4 +65,4 @@ Click the ⚙ button (Set goals) at the bottom right of the Daily Goals calendar
 
 ## Where do I find installation and Docker instructions?
 
-They are in the [project README](https://github.com/Gsync/jobsync#readme), not here. That covers running JobSync with Docker, the environment variables it reads, and how to upgrade an existing installation. These wiki pages assume you already have a running instance and cover using it.
+They are in the [project README](https://github.com/Ak1rra/jobsync-branched#readme), not here. That covers running JobSync with Docker, the environment variables it reads, and how to upgrade an existing installation. These wiki pages assume you already have a running instance and cover using it.

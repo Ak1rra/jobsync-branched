@@ -7,13 +7,13 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#ai-assistant-in-app-chat">AI Assistant</a> ·
   <a href="#mcp-server-ai-agent-integration">MCP Setup</a> ·
-  <a href="https://github.com/Gsync/jobsync/wiki">Help</a>
+  <a href="https://github.com/Ak1rra/jobsync-branched/wiki">Help</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Gsync/jobsync/releases/latest"><img src="https://img.shields.io/github/v/release/Gsync/jobsync" alt="Latest Release"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/github/license/Gsync/jobsync" alt="License"></a>
-  <a href="https://github.com/Gsync/jobsync/stargazers"><img src="https://img.shields.io/github/stars/Gsync/jobsync?style=social" alt="GitHub Stars"></a>
+  <a href="https://github.com/Ak1rra/jobsync-branched/releases/latest"><img src="https://img.shields.io/github/v/release/Ak1rra/jobsync-branched" alt="Latest Release"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/github/license/Ak1rra/jobsync-branched" alt="License"></a>
+  <a href="https://github.com/Ak1rra/jobsync-branched/stargazers"><img src="https://img.shields.io/github/stars/Ak1rra/jobsync-branched?style=social" alt="GitHub Stars"></a>
   <img src="https://img.shields.io/badge/self--hosted-Docker-blue" alt="Self-hosted with Docker">
 </p>
 
@@ -43,11 +43,11 @@ Track every application, get AI resume reviews and job matches, and discover new
 - **Monitoring Dashboard:** See your search progress, activity and daily goals at a glance.
 - **Resume Management:** Store resumes, export them as PDFs, and import existing PDF or Word files with AI.
 - **Automated Job Discovery:** Schedule searches over company job boards and AI-match each listing to your resume. [Details](#automated-job-discovery)
-- **Task & Activity Management:** Track tasks and time your activities. [Tasks](https://github.com/Gsync/jobsync/wiki/Tasks) · [Activities](https://github.com/Gsync/jobsync/wiki/Activities)
-- **Contacts:** Keep recruiters, interviewers and references, linked to the jobs they touched. [Details](https://github.com/Gsync/jobsync/wiki/Contacts)
-- **Company Pages:** One page per company with its jobs, people and links, plus a watchlist. [Details](https://github.com/Gsync/jobsync/wiki/Companies)
+- **Task & Activity Management:** Track tasks and time your activities. [Tasks](https://github.com/Ak1rra/jobsync-branched/wiki/Tasks) · [Activities](https://github.com/Ak1rra/jobsync-branched/wiki/Activities)
+- **Contacts:** Keep recruiters, interviewers and references, linked to the jobs they touched. [Details](https://github.com/Ak1rra/jobsync-branched/wiki/Contacts)
+- **Company Pages:** One page per company with its jobs, people and links, plus a watchlist. [Details](https://github.com/Ak1rra/jobsync-branched/wiki/Companies)
 - **Question Bank:** Build a library of interview questions and answers, tagged by skill.
-- **Data Backup & Restore:** Export everything as one zip, import it anywhere, and undo an import. [Details](https://github.com/Gsync/jobsync/wiki/Data-Backup)
+- **Data Backup & Restore:** Export everything as one zip, import it anywhere, and undo an import. [Details](https://github.com/Ak1rra/jobsync-branched/wiki/Data-Backup)
 - **AI Assistant:** A docked chat that reviews resumes, scores job matches, writes cover letters and adds jobs you paste in. [Details](#ai-assistant-in-app-chat)
 - **AI Agent Integration (MCP):** Add jobs and questions from Claude Desktop and other agents. [Details](#mcp-server-ai-agent-integration)
 
@@ -56,12 +56,12 @@ Track every application, get AI resume reviews and job matches, and discover new
 Make sure [Docker](https://www.docker.com) is installed and running, then:
 
 ```sh
-git clone https://github.com/Gsync/jobsync.git
-cd jobsync
+git clone https://github.com/Ak1rra/jobsync-branched.git
+cd jobsync-branched
 docker compose up
 ```
 
-> **Note:** The first startup downloads the prebuilt app image, so give it a moment before opening the browser.
+> **Note:** The first startup builds the app image from source, which takes a few minutes. Later starts reuse the built image; run `docker compose up --build` after pulling new changes to rebuild it.
 
 Open [http://localhost:3737](http://localhost:3737) and create your account. That's it!
 
@@ -81,10 +81,10 @@ Environment variables can be set in `docker-compose.yml`:
 
 ### Updating
 
-From the project directory, run the deploy script to pull the latest image and restart:
+From the project directory, run the deploy script to pull the latest source, rebuild the image and restart:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Gsync/jobsync/main/deploy.sh | sudo bash -s
+curl -fsSL https://raw.githubusercontent.com/Ak1rra/jobsync-branched/main/deploy.sh | sudo bash -s
 ```
 
 On **Windows**, run the PowerShell equivalent from the project directory instead (`deploy.sh` needs WSL or Git Bash; `deploy.ps1` runs natively):
@@ -213,7 +213,7 @@ Clients that support `streamable-http` natively can connect directly without `mc
 
 ## Help
 
-In-app usage guides — getting started, jobs, automations, and MCP access — live in the [GitHub Wiki](https://github.com/Gsync/jobsync/wiki).
+In-app usage guides — getting started, jobs, automations, and MCP access — live in the [GitHub Wiki](https://github.com/Ak1rra/jobsync-branched/wiki).
 
 ## Contributing
 

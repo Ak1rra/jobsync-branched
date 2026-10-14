@@ -1,6 +1,7 @@
 services:
   app:
-    image: ghcr.io/gsync/jobsync:latest
+    build: .
+    image: jobsync-branched:local
     container_name: jobsync_app
     ports:
       - "3737:3737"
@@ -19,6 +20,8 @@ services:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - RAPIDAPI_KEY=${RAPIDAPI_KEY:-}
+      - USAJOBS_API_KEY=${USAJOBS_API_KEY:-}
+      - USAJOBS_USER_AGENT_EMAIL=${USAJOBS_USER_AGENT_EMAIL:-}
     volumes:
       - ./jobsyncdb/data:/data
     extra_hosts:

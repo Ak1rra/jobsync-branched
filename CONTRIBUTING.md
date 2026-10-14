@@ -50,12 +50,12 @@ This project follows a [Code of Conduct](./CODE_OF_CONDUCT.md). By participating
 1. **Fork** the repository on GitHub.
 2. **Clone** your fork:
    ```bash
-   git clone https://github.com/<your-username>/jobsync.git
-   cd jobsync
+   git clone https://github.com/<your-username>/jobsync-branched.git
+   cd jobsync-branched
    ```
-3. **Add the upstream remote:**
+3. **Add the upstream remote** (this project, `Ak1rra/jobsync-branched`, which your fork tracks):
    ```bash
-   git remote add upstream https://github.com/Gsync/jobsync.git
+   git remote add upstream https://github.com/Ak1rra/jobsync-branched.git
    ```
 4. **Install dependencies:**
    ```bash
@@ -81,7 +81,7 @@ This project follows a [Code of Conduct](./CODE_OF_CONDUCT.md). By participating
 There are many ways to contribute:
 
 - **Bug fixes** — Find something broken? Fix it and open a PR.
-- **Features** — Check the [open issues](https://github.com/Gsync/jobsync/issues) for ideas, or propose a new one first.
+- **Features** — Check the [open issues](https://github.com/Ak1rra/jobsync-branched/issues) for ideas, or propose a new one first.
 - **Documentation** — Improve README, docs, or inline code comments.
 - **Tests** — Add missing unit or e2e tests.
 - **Refactoring** — Improve code quality without changing behavior.
@@ -276,7 +276,7 @@ E2E tests live in `e2e/`. These require a running dev server.
 
 ## Reporting Bugs
 
-Before filing a bug report, check if it has already been reported in the [issue tracker](https://github.com/Gsync/jobsync/issues).
+Before filing a bug report, check if it has already been reported in the [issue tracker](https://github.com/Ak1rra/jobsync-branched/issues).
 
 When opening a bug report, include:
 
@@ -290,7 +290,7 @@ When opening a bug report, include:
 
 ## Suggesting Features
 
-Open a [feature request issue](https://github.com/Gsync/jobsync/issues/new) with:
+Open a [feature request issue](https://github.com/Ak1rra/jobsync-branched/issues/new) with:
 
 1. **Problem statement** — what problem does this solve or what need does it address?
 2. **Proposed solution** — your idea for how to implement it.
@@ -302,6 +302,6 @@ Feature requests are discussed before any implementation work begins.
 
 ## Questions
 
-If you have a question that isn't answered here, feel free to open a [discussion](https://github.com/Gsync/jobsync/discussions) or an issue tagged `question`.
+If you have a question that isn't answered here, feel free to open a [discussion](https://github.com/Ak1rra/jobsync-branched/discussions) or an issue tagged `question`.
 
 Thank you for helping make JobSync better!

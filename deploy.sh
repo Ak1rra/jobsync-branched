@@ -61,9 +61,9 @@ git pull origin "$BRANCH"
 echo -e "${GREEN}[4/5]${NC} Stopping existing containers..."
 $COMPOSE_CMD down
 
-# Pull latest images and start containers
-echo -e "${GREEN}[5/5]${NC} Pulling latest images and starting containers..."
-$COMPOSE_CMD pull
+# Build the image from the pulled source and start containers
+echo -e "${GREEN}[5/5]${NC} Building image from source and starting containers..."
+$COMPOSE_CMD build --pull
 $COMPOSE_CMD up -d --force-recreate
 
 # Poll the app until it actually responds, so the success message below only

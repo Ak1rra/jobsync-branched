@@ -14,7 +14,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: gsync/jobsync
+  IMAGE_NAME: ak1rra/jobsync-branched
 
 permissions:
   contents: read

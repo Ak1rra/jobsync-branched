@@ -19,4 +19,4 @@ JobSync tracks job applications, resumes and the work you do around them. These 
 - [Data Backup](./backup.md) — download everything as one zip, import it on any instance, and undo an import.
 - [MCP Access](./mcp.md) — connect an external AI agent such as Claude Desktop, generate and revoke access tokens, and what the agent can do once connected.
 
-Installation, Docker and environment variables are in the [project README](https://github.com/Gsync/jobsync#readme).
+Installation, Docker and environment variables are in the [project README](https://github.com/Ak1rra/jobsync-branched#readme).

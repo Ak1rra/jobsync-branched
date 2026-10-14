@@ -66,9 +66,9 @@ Write-Host "[4/5] Stopping existing containers..." -ForegroundColor Green
 Compose down
 Assert-LastExit "docker compose down failed"
 
-Write-Host "[5/5] Pulling latest images and starting containers..." -ForegroundColor Green
-Compose pull
-Assert-LastExit "docker compose pull failed"
+Write-Host "[5/5] Building image from source and starting containers..." -ForegroundColor Green
+Compose build --pull
+Assert-LastExit "docker compose build failed"
 Compose up -d --force-recreate
 Assert-LastExit "docker compose up failed"
 

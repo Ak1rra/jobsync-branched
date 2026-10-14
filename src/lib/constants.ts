@@ -53,7 +53,7 @@ export const APP_CONSTANTS = {
 
   // Update check: the upstream repo and how long a GitHub release lookup is
   // cached. A day is plenty — releases are rare and the check is unauthenticated.
-  GITHUB_REPO: "Gsync/jobsync",
+  GITHUB_REPO: "Ak1rra/jobsync-branched",
   UPDATE_CHECK_REVALIDATE_SECONDS: 86_400,
   // Paired so the rail width and its matching content offset can't drift.
   SIDEBAR_WIDTH: {
