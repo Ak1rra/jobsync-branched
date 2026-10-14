@@ -54,7 +54,9 @@ window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 const RESUME_ID = "6f1f3c1e-2a0b-4a54-9b7f-0d3c5a8e9b11";
 const resumes = [{ id: RESUME_ID, title: "My Resume", sectionCount: 6 }];
 
-const usajobsAutomation = {
+// Saved by the previous version: the server-side title/locations lived in
+// positionTitle/locationName beside the ranking targetTitles/locations.
+const legacyUsajobsAutomation = {
   id: "auto-1",
   userId: "u1",
   name: "Federal data jobs",
@@ -64,12 +66,13 @@ const usajobsAutomation = {
   sourceConfig: JSON.stringify({
     usajobs: {
       keyword: "data scientist",
+      positionTitle: "Statistician",
       locationName: ["Denver"],
       radius: 25,
       hiringPath: ["vet"],
       targetTitles: ["Data Scientist"],
       keywords: [],
-      locations: [],
+      locations: ["Reno"],
       strictLocation: false,
       topK: 7,
       saveUnanalyzed: true,
@@ -81,6 +84,24 @@ const usajobsAutomation = {
   status: "active",
   resume: { id: RESUME_ID, title: "My Resume" },
 } as any;
+
+// The same automation as saved now: one titles list and one locations list.
+const usajobsAutomation = {
+  ...legacyUsajobsAutomation,
+  sourceConfig: JSON.stringify({
+    usajobs: {
+      keyword: "data scientist",
+      radius: 25,
+      hiringPath: ["vet"],
+      targetTitles: ["Data Scientist", "Statistician"],
+      keywords: [],
+      locations: ["Reno", "Denver"],
+      strictLocation: false,
+      topK: 7,
+      saveUnanalyzed: true,
+    },
+  }),
+};
 
 const user = userEvent.setup();
 
@@ -157,12 +178,47 @@ describe("AutomationWizard - USAJOBS", () => {
     );
     expect(screen.getByLabelText("Radius")).toHaveValue(25);
     expect(screen.getByText("Denver")).toBeInTheDocument();
+    expect(screen.getByText("Reno")).toBeInTheDocument();
+    expect(screen.getByText("Data Scientist")).toBeInTheDocument();
+    // No second title/location field.
+    expect(screen.queryByText("Target job titles")).toBeNull();
+    expect(screen.queryByLabelText("Search locations")).toBeNull();
     // A secondary filter is set, so the group starts open.
     expect(screen.getByRole("button", { name: "Veterans" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
+  });
+
+  it("opens a legacy config with its position title and locations in the one field each", { timeout: 30000 }, async () => {
+    renderWizard(legacyUsajobsAutomation);
+    await next();
+
+    await screen.findByLabelText("Keyword");
+    // Folded: positionTitle joins targetTitles, locationName joins locations.
+    expect(screen.getByText("Data Scientist")).toBeInTheDocument();
+    expect(screen.getByText("Statistician")).toBeInTheDocument();
+    expect(screen.getByText("Reno")).toBeInTheDocument();
+    expect(screen.getByText("Denver")).toBeInTheDocument();
+    expect(screen.getByLabelText("Radius")).toHaveValue(25);
+    expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
+  });
+
+  it("re-saves a legacy config in the unified shape", { timeout: 30000 }, async () => {
+    renderWizard(legacyUsajobsAutomation);
+    await next();
+    await screen.findByLabelText("Keyword");
+    for (let i = 0; i < 4; i++) await next();
+    await user.click(screen.getByRole("button", { name: /update automation/i }));
+
+    await waitFor(() => expect(updateAutomation).toHaveBeenCalledTimes(1));
+    const saved = updateAutomation.mock.calls[0][1].sourceConfig.usajobs;
+    expect(saved.targetTitles).toEqual(["Data Scientist", "Statistician"]);
+    expect(saved.locations).toEqual(["Reno", "Denver"]);
+    expect(saved.radius).toBe(25);
+    expect(saved).not.toHaveProperty("positionTitle");
+    expect(saved).not.toHaveProperty("locationName");
   });
 
   it("saves an edited USAJOBS config under sourceConfig.usajobs", { timeout: 30000 }, async () => {
@@ -185,13 +241,16 @@ describe("AutomationWizard - USAJOBS", () => {
     expect(input.sourceConfig).toEqual({
       usajobs: expect.objectContaining({
         keyword: "statistician",
-        locationName: ["Denver"],
+        targetTitles: ["Data Scientist", "Statistician"],
+        locations: ["Reno", "Denver"],
         radius: 25,
         hiringPath: ["vet"],
         topK: 7,
       }),
     });
     expect(input.sourceConfig.usajobs).not.toHaveProperty("companies");
+    expect(input.sourceConfig.usajobs).not.toHaveProperty("positionTitle");
+    expect(input.sourceConfig.usajobs).not.toHaveProperty("locationName");
   });
 
   it("still gates a Greenhouse automation on picking a company", { timeout: 30000 }, async () => {
@@ -221,9 +280,29 @@ describe("AutomationSearchConfig - USAJOBS", () => {
     expect(screen.queryByText("Companies")).toBeNull();
     expect(screen.getByText("Keyword")).toBeInTheDocument();
     expect(screen.getByText("data scientist")).toBeInTheDocument();
-    expect(screen.getByText("Denver (within 25)")).toBeInTheDocument();
+    expect(screen.getByText("Radius")).toBeInTheDocument();
+    expect(screen.getByText("25")).toBeInTheDocument();
     expect(screen.getByText("Veterans")).toBeInTheDocument();
-    expect(screen.getByText("Data Scientist")).toBeInTheDocument();
+    // Titles and locations are listed once, from the shared fields.
+    expect(screen.getByText("Position titles")).toBeInTheDocument();
+    expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
+    expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
+    expect(screen.queryByText("Search locations")).toBeNull();
+    expect(screen.queryByText("Target titles")).toBeNull();
+  });
+
+  it("folds a legacy config's position title and locations into the same rows", async () => {
+    render(
+      <AutomationSearchConfig
+        sourceConfig={legacyUsajobsAutomation.sourceConfig}
+        jobBoard="usajobs"
+        retired={false}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: /show more/i }));
+
+    expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
+    expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
   });
 
   it("still lists companies with board links for Greenhouse", async () => {
@@ -261,7 +340,15 @@ describe("AutomationList - USAJOBS", () => {
 
     expect(screen.getByText("USAJOBS")).toBeInTheDocument();
     expect(screen.getByText("data scientist")).toBeInTheDocument();
-    expect(screen.getByText("Denver (within 25)")).toBeInTheDocument();
+    expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
+    expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
+  });
+
+  it("shows a legacy USAJOBS card's position title and locations", () => {
+    renderList([legacyUsajobsAutomation]);
+
+    expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
+    expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
   });
 
   it("leaves a Greenhouse card as it was", () => {

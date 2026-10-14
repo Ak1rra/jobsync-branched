@@ -4,6 +4,7 @@ import type {
   UsajobsSourceConfig,
 } from "@/models/automation.model";
 import { UsajobsSourceConfigSchema } from "@/models/automation.schema";
+import { foldLegacyUsajobsConfig } from "@/lib/scraper/usajobs/sourceConfig";
 
 export interface AtsRunConfig {
   companies: { name: string; token: string; host?: "default" | "eu" }[];
@@ -17,26 +18,26 @@ export interface AtsRunConfig {
 
 // Re-validated at run time (not just at save) so a hand-edited or legacy row
 // cannot send an unvalidated value into the query string. Returns the ranking
-// fields in the shared shape plus the validated USAJOBS query config.
+// fields in the shared shape plus the validated USAJOBS query config. Rows
+// saved before titles/locations were unified (positionTitle / locationName)
+// are folded into targetTitles / locations first, so they keep working.
 export function parseUsajobsConfig(
   sourceConfig: string | null | undefined,
 ): { query: UsajobsSourceConfig; ranking: Omit<AtsRunConfig, "companies"> } | null {
   if (!sourceConfig) return null;
   try {
-    const cfg = JSON.parse(sourceConfig)?.usajobs;
+    const cfg = foldLegacyUsajobsConfig(JSON.parse(sourceConfig)?.usajobs);
     const parsed = UsajobsSourceConfigSchema.safeParse(cfg);
     if (!parsed.success) return null;
     const q = parsed.data;
     return {
       query: q,
       ranking: {
-        // The server-side title/keyword is the user's own relevance
-        // statement, so it also counts as a ranking term; otherwise a
-        // search the API matched by synonym could fail the relevance floor.
-        targetTitles: [
-          ...(q.targetTitles ?? []),
-          ...(q.positionTitle ? [q.positionTitle] : []),
-        ],
+        // The titles/locations are both the server-side search and the
+        // ranking terms (one list each), so a job the API matched by synonym
+        // still ranks against what the user asked for. The server-side
+        // keyword is likewise a ranking term.
+        targetTitles: q.targetTitles ?? [],
         keywords: [...(q.keywords ?? []), ...(q.keyword ? [q.keyword] : [])],
         locations: q.locations ?? [],
         strictLocation: !!q.strictLocation,

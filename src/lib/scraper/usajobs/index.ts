@@ -8,6 +8,7 @@ import {
   mapUsajobsItem,
   parseUsajobsDate,
 } from "./mapper";
+import { dedupeCaseInsensitive } from "./sourceConfig";
 import {
   USAJOBS_EMAIL_REGEX,
   USAJOBS_KEY_REGEX,
@@ -125,12 +126,28 @@ const WHO_MAY_APPLY_WIRE = {
 // Multi-value parameters are semicolon-delimited per the API docs.
 const join = (values: (string | number)[]) => values.join(";");
 
-// Translates the config into [name, value] pairs in a fixed order. Absent
-// filters are omitted. Values are encoded by buildUsajobsUrl.
+// Derives the request filters from a saved config: the shared targetTitles
+// become the PositionTitle searches and the shared locations the LocationName
+// list (the config stores no separate server-side title/location).
+export function toUsajobsFilters(config: UsajobsSourceConfig): UsajobsFilters {
+  const { targetTitles, locations, ...rest } = config;
+  const filters: UsajobsFilters = rest;
+  const titles = dedupeCaseInsensitive(targetTitles ?? []);
+  const places = dedupeCaseInsensitive(locations ?? []);
+  if (titles.length) filters.positionTitles = titles;
+  if (places.length) filters.locationName = places;
+  return filters;
+}
+
+// Translates one search into [name, value] pairs in a fixed order. Absent
+// filters are omitted. Values are encoded by buildUsajobsUrl. PositionTitle
+// takes a single value, so the title of THIS search is passed explicitly
+// (f.positionTitles lists all of them; the fetcher runs one search each).
 export function buildUsajobsParams(
   f: UsajobsFilters,
   page: number,
   pageSize: number,
+  positionTitle?: string,
 ): [string, string][] {
   const p: [string, string][] = [];
   const add = (name: string, value: string | number | undefined) => {
@@ -141,7 +158,7 @@ export function buildUsajobsParams(
   };
 
   add("Keyword", f.keyword);
-  add("PositionTitle", f.positionTitle);
+  add("PositionTitle", positionTitle);
   addList("LocationName", f.locationName);
   add("Radius", f.radius);
   addList("Organization", f.organization);
@@ -177,8 +194,9 @@ export function buildUsajobsUrl(
   f: UsajobsFilters,
   page: number,
   pageSize: number = APP_CONSTANTS.USAJOBS_PAGE_SIZE,
+  positionTitle?: string,
 ): string {
-  const query = buildUsajobsParams(f, page, pageSize)
+  const query = buildUsajobsParams(f, page, pageSize, positionTitle)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
   return `${APP_CONSTANTS.USAJOBS_BASE_URL}?${query}`;
@@ -316,8 +334,11 @@ export async function fetchUsajobsJobs(
     return Math.round(ceiling / 2 + (random() * ceiling) / 2); // equal jitter
   };
 
-  async function fetchPage(page: number): Promise<PageResult> {
-    const url = buildUsajobsUrl(filters, page, pageSize);
+  async function fetchPage(
+    page: number,
+    title: string | undefined,
+  ): Promise<PageResult> {
+    const url = buildUsajobsUrl(filters, page, pageSize, title);
     for (let attempt = 1; ; attempt++) {
       if (controller.signal.aborted) return handleAbort();
       const canRetry = attempt < maxAttempts;
@@ -406,20 +427,45 @@ export async function fetchUsajobsJobs(
   }
 
   const jobs: JobDetails[] = [];
-  const seen = new Set<string>();
+  // Announcements already handled by ANY search of this run (merge dedupe).
+  const handled = new Set<string>();
   let pagesFetched = 0;
-  let rawSeen = 0;
   let skipped = 0;
   let totalAvailable: number | undefined;
   let truncated = false;
   let failure: UsajobsFailure | undefined;
+  // Set when continuing cannot help (credentials rejected, deadline hit,
+  // rate limited) or a shared ceiling was reached.
+  let stopAll = false;
+  let searchesRun = 0;
 
-  try {
-    for (let page = 1; page <= APP_CONSTANTS.USAJOBS_MAX_PAGES; page++) {
-      const result = await fetchPage(page);
+  const keyOf = (it: UsajobsSearchItem) =>
+    String(it?.MatchedObjectId ?? it?.MatchedObjectDescriptor?.PositionURI ?? "");
+
+  // PositionTitle takes one value, so each title is its own paginated search.
+  // They share the deadline, retry policy, page/result ceilings and the merged
+  // dedupe set. No titles means one search without PositionTitle.
+  const titles: (string | undefined)[] = filters.positionTitles?.length
+    ? filters.positionTitles
+    : [undefined];
+
+  // One paginated search; mutates the shared state above.
+  async function runSearch(title: string | undefined) {
+    // Per-search: a server that ignores `Page` returns the same rows, and
+    // each search counts its own rows against its own SearchResultCountAll.
+    const seenInSearch = new Set<string>();
+    let rawSeen = 0;
+    searchesRun++;
+
+    for (let page = 1; ; page++) {
+      const result = await fetchPage(page, title);
       if (!result.ok) {
-        failure = result.failure;
-        break;
+        failure ??= result.failure;
+        const k = result.failure.kind;
+        if (k === "auth" || k === "timeout" || k === "rate_limited") {
+          stopAll = true;
+        }
+        return;
       }
       pagesFetched++;
 
@@ -429,19 +475,20 @@ export async function fetchUsajobsJobs(
       if (Number.isFinite(all)) totalAvailable = all;
       const pages = Number.parseInt(String(sr.UserArea?.NumberOfPages), 10);
 
-      if (items.length === 0) break;
+      if (items.length === 0) return;
 
-      // Repeat-page guard: a server that ignores `Page` returns the same rows;
-      // stop instead of refetching them up to the page ceiling.
-      const keys = items.map(
-        (it) =>
-          String(it?.MatchedObjectId ?? it?.MatchedObjectDescriptor?.PositionURI ?? ""),
-      );
-      if (keys.every((k) => k && seen.has(k))) break;
-      keys.forEach((k) => k && seen.add(k));
+      // Repeat-page guard: stop instead of refetching the same rows up to the
+      // page ceiling.
+      const keys = items.map(keyOf);
+      if (keys.every((k) => k && seenInSearch.has(k))) return;
+      keys.forEach((k) => k && seenInSearch.add(k));
       rawSeen += items.length;
 
       for (const item of items) {
+        const key = keyOf(item);
+        // Already returned by an earlier search (or page) of this run.
+        if (key && handled.has(key)) continue;
+        if (key) handled.add(key);
         const mapped = mapUsajobsItem(item);
         if (!mapped || !passesClientFilters(item, filters, now())) {
           skipped++;
@@ -454,28 +501,57 @@ export async function fetchUsajobsJobs(
         (Number.isFinite(pages) && page >= pages) ||
         (totalAvailable !== undefined && rawSeen >= totalAvailable) ||
         (!Number.isFinite(pages) && items.length < pageSize);
-      if (lastPage) break;
+      if (lastPage) return;
 
       if (
-        page >= APP_CONSTANTS.USAJOBS_MAX_PAGES ||
+        pagesFetched >= APP_CONSTANTS.USAJOBS_MAX_PAGES ||
         jobs.length >= APP_CONSTANTS.USAJOBS_MAX_RESULTS
       ) {
         truncated = true; // more pages exist; we stopped at a safety ceiling
-        break;
+        stopAll = true;
+        return;
       }
 
       try {
         await sleep(APP_CONSTANTS.USAJOBS_PAGE_DELAY_MS, controller.signal);
       } catch {
         const timeout = handleAbort();
-        if (!timeout.ok) failure = timeout.failure;
-        break;
+        if (!timeout.ok) failure ??= timeout.failure;
+        stopAll = true;
+        return;
       }
+    }
+  }
+
+  try {
+    for (let i = 0; i < titles.length && !stopAll; i++) {
+      if (i > 0) {
+        // Searches remain but a shared ceiling is already used up.
+        if (
+          pagesFetched >= APP_CONSTANTS.USAJOBS_MAX_PAGES ||
+          jobs.length >= APP_CONSTANTS.USAJOBS_MAX_RESULTS
+        ) {
+          truncated = true;
+          break;
+        }
+        try {
+          await sleep(APP_CONSTANTS.USAJOBS_PAGE_DELAY_MS, controller.signal);
+        } catch {
+          const timeout = handleAbort();
+          if (!timeout.ok) failure ??= timeout.failure;
+          break;
+        }
+      }
+      await runSearch(titles[i]);
     }
   } finally {
     clearTimeout(timer);
     external?.removeEventListener("abort", onExternalAbort);
   }
+
+  // Several searches overlap, so their SearchResultCountAll values do not add
+  // up to a count of distinct announcements; only report it for one search.
+  if (searchesRun > 1) totalAvailable = undefined;
 
   return {
     jobs: jobs.slice(0, APP_CONSTANTS.USAJOBS_MAX_RESULTS),
@@ -512,7 +588,7 @@ export async function searchUsajobsJobs(ctx: {
     };
   }
 
-  const result = await fetchUsajobsJobs(credentials, ctx.config, {
+  const result = await fetchUsajobsJobs(credentials, toUsajobsFilters(ctx.config), {
     signal: ctx.signal,
   });
   const fetched = result.jobs.length + result.skipped;

@@ -9,6 +9,7 @@ import type {
   LeverSourceConfig,
   UsajobsSourceConfig,
 } from "@/models/automation.model";
+import { foldLegacyUsajobsConfig } from "@/lib/scraper/usajobs/sourceConfig";
 import { summarizeUsajobsFilters } from "../ats-search-step/usajobsConfig";
 import { companyBoardUrl } from "@/lib/atsBoardUrl";
 import { APP_CONSTANTS } from "@/lib/constants";
@@ -22,7 +23,11 @@ function parseAtsConfig(
 ): Partial<LeverSourceConfig & UsajobsSourceConfig> | null {
   if (!sourceConfig) return null;
   try {
-    return JSON.parse(sourceConfig)?.[jobBoard] ?? null;
+    const cfg = JSON.parse(sourceConfig)?.[jobBoard] ?? null;
+    // Pre-unification USAJOBS rows keep their title/locations in legacy keys.
+    return jobBoard === "usajobs"
+      ? (foldLegacyUsajobsConfig(cfg) as ReturnType<typeof parseAtsConfig>)
+      : cfg;
   } catch {
     return null;
   }
@@ -99,7 +104,9 @@ export function AutomationSearchConfig({
             </div>
           )}
           <div>
-            <p className="text-sm text-muted-foreground">Target titles</p>
+            <p className="text-sm text-muted-foreground">
+              {jobBoard === "usajobs" ? "Position titles" : "Target titles"}
+            </p>
             <p className="font-medium">
               {greenhouseConfig.targetTitles?.length
                 ? greenhouseConfig.targetTitles.join(", ")

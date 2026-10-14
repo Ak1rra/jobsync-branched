@@ -40,6 +40,35 @@ describe("parseEditSourceConfig", () => {
   });
 });
 
+describe("parseEditSourceConfig - usajobs legacy title/location", () => {
+  const parse = (usajobs: unknown) =>
+    parseEditSourceConfig(JSON.stringify({ usajobs }))?.usajobs as any;
+
+  it("folds positionTitle and locationName into the shared fields for the edit form", () => {
+    const cfg = parse({
+      keyword: "x",
+      positionTitle: "IT Specialist",
+      locationName: ["Denver", "reno"],
+      radius: 20,
+      targetTitles: ["Engineer"],
+      locations: ["Reno"],
+    });
+    expect(cfg).not.toHaveProperty("positionTitle");
+    expect(cfg).not.toHaveProperty("locationName");
+    expect(cfg.targetTitles).toEqual(["Engineer", "IT Specialist"]);
+    expect(cfg.locations).toEqual(["Reno", "Denver"]);
+    expect(cfg.radius).toBe(20);
+    expect(UsajobsSourceConfigSchema.safeParse(cfg).success).toBe(true);
+  });
+
+  it("leaves a current config and the other boards untouched", () => {
+    const current = { keyword: "x", targetTitles: ["A"], locations: ["B"] };
+    expect(parse(current)).toEqual(current);
+    const lever = { lever: { companies: [], locationName: ["kept"] } };
+    expect(parseEditSourceConfig(JSON.stringify(lever))).toEqual(lever);
+  });
+});
+
 describe("parseEditSourceConfig - usajobs", () => {
   it("keeps a USAJOBS config so editing a USAJOBS automation keeps its query", () => {
     const sc = JSON.stringify({ usajobs: { keyword: "nurse", radius: 10 } });

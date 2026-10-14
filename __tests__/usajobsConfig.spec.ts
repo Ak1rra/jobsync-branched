@@ -21,7 +21,7 @@ describe("cleanUsajobsConfig", () => {
     const cleaned = cleanUsajobsConfig({
       ...base,
       keyword: "  ",
-      positionTitle: "Nurse",
+      targetTitles: ["Nurse"],
       organization: [],
       radius: undefined,
       datePosted: Number.NaN,
@@ -30,7 +30,7 @@ describe("cleanUsajobsConfig", () => {
     expect(cleaned).not.toHaveProperty("organization");
     expect(cleaned).not.toHaveProperty("radius");
     expect(cleaned).not.toHaveProperty("datePosted");
-    expect(cleaned.positionTitle).toBe("Nurse");
+    expect(cleaned.targetTitles).toEqual(["Nurse"]);
   });
 
   it("keeps the ranking fields as-is, including empty lists", () => {
@@ -46,9 +46,12 @@ describe("cleanUsajobsConfig", () => {
       cleanUsajobsConfig({ ...base, keyword: "x", radius: 5 }),
     ).not.toHaveProperty("radius");
     expect(
-      cleanUsajobsConfig({ ...base, locationName: ["Denver"], radius: 5 })
-        .radius,
+      cleanUsajobsConfig({ ...base, locations: ["Denver"], radius: 5 }).radius,
     ).toBe(5);
+    // an emptied location list (kept as [] like the other boards) also drops it
+    expect(
+      cleanUsajobsConfig({ ...base, keyword: "x", locations: [], radius: 5 }),
+    ).not.toHaveProperty("radius");
   });
 });
 
@@ -62,13 +65,22 @@ describe("usajobsIssues / isUsajobsConfigValid", () => {
 
   it.each([
     ["keyword", { keyword: "x" }],
-    ["positionTitle", { positionTitle: "x" }],
-    ["locationName", { locationName: ["Denver"] }],
+    ["targetTitles", { targetTitles: ["x"] }],
+    ["locations", { locations: ["Denver"] }],
     ["organization", { organization: ["AF"] }],
     ["jobCategoryCode", { jobCategoryCode: ["2210"] }],
   ])("accepts %s as the criterion", (_name, patch) => {
     expect(isUsajobsConfigValid({ ...base, ...patch })).toBe(true);
     expect(usajobsIssues({ ...base, ...patch })).toEqual([]);
+  });
+
+  it("names the unified fields in title/location validation messages", () => {
+    const tooMany = usajobsIssues({
+      ...base,
+      targetTitles: ["a", "b", "c", "d", "e", "f"],
+      locations: ["A;B"],
+    });
+    expect(tooMany.map((i) => i.field)).toEqual(["Position titles", "Locations"]);
   });
 
   it("does not count a filter-only config as a criterion", () => {
@@ -97,7 +109,8 @@ describe("hasSecondaryUsajobsFilters", () => {
       hasSecondaryUsajobsFilters({
         ...base,
         keyword: "x",
-        locationName: ["Denver"],
+        targetTitles: ["Nurse"],
+        locations: ["Denver"],
         radius: 5,
       }),
     ).toBe(false);
@@ -116,7 +129,8 @@ describe("summarizeUsajobsFilters", () => {
   it("describes set filters with human labels and skips unset ones", () => {
     const rows = summarizeUsajobsFilters({
       keyword: "data",
-      locationName: ["Denver", "Austin"],
+      targetTitles: ["Analyst", "Scientist"],
+      locations: ["Denver", "Austin"],
       radius: 25,
       remunerationMinimumAmount: 90000,
       hiringPath: ["vet", "public"],
@@ -128,7 +142,8 @@ describe("summarizeUsajobsFilters", () => {
     });
     expect(Object.fromEntries(rows.map((r) => [r.label, r.value]))).toEqual({
       Keyword: "data",
-      "Search locations": "Denver, Austin (within 25)",
+      // titles and locations are listed once, by the shared rows of the views
+      Radius: "25",
       Salary: "From $90,000",
       "Hiring path": "Veterans, Open to the public",
       Schedule: "Full-time",
@@ -136,6 +151,13 @@ describe("summarizeUsajobsFilters", () => {
       Remote: "Exclude remote",
       Sort: "Close date (Ascending)",
     });
+  });
+
+  it("does not list titles or locations (the views show those once) and drops a radius with no location", () => {
+    const labels = (cfg: Parameters<typeof summarizeUsajobsFilters>[0]) =>
+      summarizeUsajobsFilters(cfg).map((r) => r.label);
+    expect(labels({ targetTitles: ["Nurse"], locations: ["Reno"] })).toEqual([]);
+    expect(labels({ radius: 25 })).toEqual([]);
   });
 
   it("tolerates unknown stored codes instead of throwing", () => {

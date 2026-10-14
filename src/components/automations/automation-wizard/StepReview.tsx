@@ -50,7 +50,9 @@ export function StepReview({
         </div>
       )}
       <div className="flex justify-between gap-4">
-        <span className="text-muted-foreground">Target titles</span>
+        <span className="text-muted-foreground">
+          {usajobsConfig ? "Position titles" : "Target titles"}
+        </span>
         <span className="font-medium text-right">
           {ranking.targetTitles?.length
             ? ranking.targetTitles.join(", ")

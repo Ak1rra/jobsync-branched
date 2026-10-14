@@ -45,8 +45,8 @@ describe("CreateAutomationSchema (usajobs)", () => {
   });
 
   it.each([
-    ["positionTitle", { positionTitle: "Electrical Engineer" }],
-    ["locationName", { locationName: ["Atlanta, Georgia"] }],
+    ["targetTitles", { targetTitles: ["Electrical Engineer"] }],
+    ["locations", { locations: ["Atlanta, Georgia"] }],
     ["organization", { organization: ["TR"] }],
     ["jobCategoryCode", { jobCategoryCode: ["2210"] }],
   ])("accepts %s as the narrowing criterion", (_name, cfg) => {
@@ -56,8 +56,7 @@ describe("CreateAutomationSchema (usajobs)", () => {
   it("accepts every documented filter together", () => {
     const result = create({
       keyword: "software",
-      positionTitle: "Engineer",
-      locationName: ["Atlanta, Georgia", "Norfolk Virginia"],
+      locations: ["Atlanta, Georgia", "Norfolk Virginia"],
       radius: 75,
       organization: ["TR", "AF"],
       jobCategoryCode: ["2210", "0830"],
@@ -75,9 +74,8 @@ describe("CreateAutomationSchema (usajobs)", () => {
       sortField: "opendate",
       sortDirection: "desc",
       fields: "Full",
-      targetTitles: ["IT Specialist"],
+      targetTitles: ["IT Specialist", "Engineer"],
       keywords: ["python"],
-      locations: ["Washington"],
       strictLocation: true,
       topK: 20,
       saveUnanalyzed: false,
@@ -102,17 +100,42 @@ describe("CreateAutomationSchema (usajobs)", () => {
     ["series code with separator", { jobCategoryCode: ["2210;0830"] }],
     ["organization with separator", { organization: ["TR;AF"] }],
     ["organization injection", { organization: ["TR&Page=9"] }],
-    ["location containing ';'", { locationName: ["A;B"] }],
+    ["location containing ';'", { locations: ["A;B"] }],
+    ["too many titles", { targetTitles: Array.from({ length: 6 }, (_, i) => `T${i}`) }],
+    ["empty title", { targetTitles: [""] }],
+    ["title too long", { targetTitles: ["x".repeat(101)] }],
     ["empty keyword", { keyword: "   " }],
     ["keyword too long", { keyword: "x".repeat(201) }],
-    ["too many locations", { locationName: Array.from({ length: 11 }, (_, i) => `L${i}`) }],
+    ["too many locations", { locations: Array.from({ length: 11 }, (_, i) => `L${i}`) }],
     ["radius without a location", { keyword: "x", radius: 25 }],
-    ["radius of 0", { locationName: ["Reno"], radius: 0 }],
+    ["radius of 0", { locations: ["Reno"], radius: 0 }],
+    ["radius with only titles", { targetTitles: ["Nurse"], radius: 10 }],
     ["min pay above max pay", { keyword: "x", remunerationMinimumAmount: 90000, remunerationMaximumAmount: 50000 }],
     ["low grade above high grade", { keyword: "x", payGradeLow: "12", payGradeHigh: "07" }],
     ["topK over the cap", { keyword: "x", topK: 51 }],
   ])("rejects %s", (_name, cfg) => {
     expect(create(cfg).success).toBe(false);
+  });
+
+  it("accepts the maximum number of titles and locations", () => {
+    expect(
+      create({
+        targetTitles: Array.from({ length: 5 }, (_, i) => `T${i}`),
+        locations: Array.from({ length: 10 }, (_, i) => `L${i}`),
+        radius: 10,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("no longer stores a separate positionTitle / locationName (stripped, not a criterion)", () => {
+    expect(create({ positionTitle: "Nurse" }).success).toBe(false);
+    expect(create({ locationName: ["Reno"] }).success).toBe(false);
+    const parsed = UsajobsSourceConfigSchema.safeParse({
+      keyword: "x",
+      positionTitle: "Nurse",
+      locationName: ["Reno"],
+    });
+    expect(parsed.success && Object.keys(parsed.data)).toEqual(["keyword"]);
   });
 
   it("reports a criterion error on the keyword path", () => {
@@ -226,7 +249,7 @@ describe("apiKeySaveSchema (usajobs credentials)", () => {
 describe("parseUsajobsConfig (run-time re-validation)", () => {
   it("returns the query plus shared ranking fields with defaults", () => {
     const cfg = parseUsajobsConfig(
-      JSON.stringify({ usajobs: { keyword: "nurse", positionTitle: "RN", targetTitles: ["Nurse"] } }),
+      JSON.stringify({ usajobs: { keyword: "nurse", targetTitles: ["Nurse", "RN"] } }),
     )!;
     expect(cfg.query.keyword).toBe("nurse");
     expect(cfg.ranking).toMatchObject({
@@ -237,6 +260,65 @@ describe("parseUsajobsConfig (run-time re-validation)", () => {
       saveUnanalyzed: true,
     });
     expect(cfg.ranking.topK).toBeGreaterThan(0);
+  });
+
+  it("feeds the one titles/locations list to both the query and the ranking", () => {
+    const cfg = parseUsajobsConfig(
+      JSON.stringify({
+        usajobs: { targetTitles: ["Nurse", "RN"], locations: ["Denver", "Reno"], radius: 25 },
+      }),
+    )!;
+    expect(cfg.query.targetTitles).toEqual(["Nurse", "RN"]);
+    expect(cfg.ranking.targetTitles).toEqual(["Nurse", "RN"]);
+    expect(cfg.ranking.locations).toEqual(["Denver", "Reno"]);
+  });
+
+  describe("legacy positionTitle / locationName", () => {
+    const parse = (usajobs: unknown) =>
+      parseUsajobsConfig(JSON.stringify({ usajobs }));
+
+    it("folds positionTitle into targetTitles and locationName into locations", () => {
+      const cfg = parse({
+        positionTitle: "IT Specialist",
+        locationName: ["Denver, Colorado"],
+        radius: 30,
+        targetTitles: ["Engineer"],
+        locations: ["Reno"],
+        strictLocation: true,
+      })!;
+      expect(cfg.query).not.toHaveProperty("positionTitle");
+      expect(cfg.query).not.toHaveProperty("locationName");
+      expect(cfg.query.targetTitles).toEqual(["Engineer", "IT Specialist"]);
+      expect(cfg.query.locations).toEqual(["Reno", "Denver, Colorado"]);
+      expect(cfg.query.radius).toBe(30);
+      expect(cfg.ranking.targetTitles).toEqual(["Engineer", "IT Specialist"]);
+      expect(cfg.ranking.locations).toEqual(["Reno", "Denver, Colorado"]);
+    });
+
+    it("keeps a legacy-only title/location config runnable (was the only criterion)", () => {
+      const cfg = parse({ positionTitle: "Nurse" })!;
+      expect(cfg.query.targetTitles).toEqual(["Nurse"]);
+      expect(parse({ locationName: ["Reno"], radius: 5 })!.query.locations).toEqual(["Reno"]);
+    });
+
+    it("dedupes case-insensitively, first spelling wins", () => {
+      const cfg = parse({
+        positionTitle: "it specialist",
+        locationName: ["DENVER", "reno"],
+        targetTitles: ["IT Specialist"],
+        locations: ["Denver"],
+      })!;
+      expect(cfg.query.targetTitles).toEqual(["IT Specialist"]);
+      expect(cfg.query.locations).toEqual(["Denver", "reno"]);
+    });
+
+    it("keeps the legacy search title when folding would exceed the cap", () => {
+      const cfg = parse({
+        positionTitle: "Search Title",
+        targetTitles: ["A", "B", "C", "D", "E"],
+      })!;
+      expect(cfg.query.targetTitles).toEqual(["A", "B", "C", "D", "Search Title"]);
+    });
   });
 
   it("honours saveUnanalyzed=false, strictLocation and topK", () => {

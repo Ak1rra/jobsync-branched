@@ -189,7 +189,16 @@ describe("runAutomation (usajobs)", () => {
 
     expect(result.status).toBe("completed");
     expect(result.errorMessage).toBeUndefined();
-    expect(spy).toHaveBeenCalledTimes(2);
+    // One search per target title (4), each paging through both pages; the
+    // announcements they share are merged, so each job is processed once.
+    expect(spy).toHaveBeenCalledTimes(8);
+    expect(
+      new Set(
+        spy.mock.calls.map((c) =>
+          new URL(String(c[0])).searchParams.get("PositionTitle"),
+        ),
+      ),
+    ).toEqual(new Set(usajobsConfig.targetTitles));
     expect(result.jobsSearched).toBe(4);
     expect(result.jobsDeduplicated).toBe(4);
     expect(result.jobsSaved).toBe(4);
@@ -203,6 +212,34 @@ describe("runAutomation (usajobs)", () => {
     expect((searchGreenhouseJobs as any).mock.calls.length).toBe(0);
     expect((searchLeverJobs as any).mock.calls.length).toBe(0);
     expect((searchAshbyJobs as any).mock.calls.length).toBe(0);
+  });
+
+  it("a legacy config (positionTitle/locationName) still runs: folded into the searches and the ranking", async () => {
+    const legacy = {
+      ...usajobsAutomation,
+      sourceConfig: JSON.stringify({
+        usajobs: {
+          keyword: "information technology",
+          positionTitle: "IT Specialist",
+          locationName: ["Denver, Colorado", "Reno, Nevada"],
+          radius: 25,
+          keywords: [],
+          strictLocation: false,
+        },
+      }),
+    };
+    const spy = stubPages({ 1: () => res(page1), 2: () => res(page2) });
+
+    const result = await runAutomation(legacy);
+
+    expect(result.status).toBe("completed");
+    for (const [url] of spy.mock.calls as [string][]) {
+      const q = new URL(String(url)).searchParams;
+      expect(q.get("PositionTitle")).toBe("IT Specialist");
+      expect(q.get("LocationName")).toBe("Denver, Colorado;Reno, Nevada");
+      expect(q.get("Radius")).toBe("25");
+    }
+    expect(result.jobsSaved).toBeGreaterThan(0);
   });
 
   it("sends the credentials as headers on every request", async () => {
@@ -426,6 +463,37 @@ describe("runAutomation (usajobs)", () => {
       stubPages({ 1: () => res(page1), 2: () => res({}, 500) });
       const result = await runAutomation(usajobsAutomation);
       expect(result.status).toBe("completed_with_errors");
+    });
+
+    it("one title's search failing after others returned jobs -> completed_with_errors, jobs still saved", async () => {
+      const auto = {
+        ...usajobsAutomation,
+        sourceConfig: JSON.stringify({
+          usajobs: { ...usajobsConfig, targetTitles: ["IT Specialist", "Management Analyst"] },
+        }),
+      };
+      vi.spyOn(global, "fetch").mockImplementation((url) => {
+        const u = new URL(String(url));
+        if (u.searchParams.get("PositionTitle") === "Management Analyst") {
+          return Promise.resolve(res({}, 400));
+        }
+        return Promise.resolve(
+          res(u.searchParams.get("Page") === "1" ? page1 : page2),
+        );
+      });
+
+      const result = await runAutomation(auto);
+
+      expect(result.status).toBe("completed_with_errors");
+      expect(result.jobsSaved).toBeGreaterThan(0);
+      expect(result.errorMessage).toMatch(/partial/);
+    });
+
+    it("every title failing with nothing fetched -> failed, never completed", async () => {
+      vi.spyOn(global, "fetch").mockImplementation(() => Promise.resolve(res({}, 400)));
+      const result = await runAutomation(usajobsAutomation);
+      expect(result.status).toBe("failed");
+      expect(result.jobsSaved).toBe(0);
     });
 
     it("malformed response -> failed", async () => {

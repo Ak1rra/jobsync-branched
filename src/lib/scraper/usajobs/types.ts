@@ -70,12 +70,22 @@ export type UsajobsSortDirection = (typeof USAJOBS_SORT_DIRECTIONS)[number];
 export const USAJOBS_FIELDS = ["Min", "Full"] as const;
 export type UsajobsFields = (typeof USAJOBS_FIELDS)[number];
 
+// Caps on the shared title/location lists a USAJOBS config carries. Titles
+// are capped low because PositionTitle takes a single value, so each title is
+// its own search request. Locations are one semicolon-joined LocationName.
+export const USAJOBS_MAX_TITLES = 5;
+export const USAJOBS_MAX_LOCATIONS = 10;
+
 // Server-side filters, one-to-one with the documented query parameters
-// (camelCase of the API name). Everything is optional; the translator omits
-// absent values. See buildUsajobsParams in ./index.ts.
+// (camelCase of the API name), as handed to the fetcher. Everything is
+// optional; the translator omits absent values. See buildUsajobsParams in
+// ./index.ts. The saved config does NOT store positionTitles/locationName: it
+// keeps the shared targetTitles/locations and toUsajobsFilters derives these.
 export interface UsajobsFilters {
   keyword?: string;
-  positionTitle?: string;
+  // The API's PositionTitle documents a single value (no multi-value
+  // delimiter), so the fetcher runs one search per title and merges them.
+  positionTitles?: string[];
   locationName?: string[]; // semicolon-delimited on the wire
   radius?: number; // paired with locationName; the docs do not state units
   organization?: string[]; // agency sub-element codes, semicolon-delimited

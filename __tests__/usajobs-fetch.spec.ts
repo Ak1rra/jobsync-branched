@@ -14,6 +14,7 @@ import {
   fetchUsajobsJobs,
   resolveUsajobsCredentials,
   searchUsajobsJobs,
+  toUsajobsFilters,
   USAJOBS_NOT_CONFIGURED,
 } from "@/lib/scraper/usajobs";
 import { APP_CONSTANTS } from "@/lib/constants";
@@ -120,7 +121,7 @@ describe("param translation + URL encoding", () => {
     const params = buildUsajobsParams(
       {
         keyword: "software",
-        positionTitle: "Electrical Engineer",
+        positionTitles: ["Electrical Engineer", "Ignored: one title per request"],
         locationName: ["Atlanta, Georgia", "Norfolk Virginia"],
         radius: 75,
         organization: ["TR", "AF"],
@@ -142,6 +143,7 @@ describe("param translation + URL encoding", () => {
       },
       3,
       100,
+      "Electrical Engineer",
     );
     expect(params).toEqual([
       ["Keyword", "software"],
@@ -179,11 +181,21 @@ describe("param translation + URL encoding", () => {
     ).toBe(false);
   });
 
+  it("sends PositionTitle only for the title of the request (a list is never joined)", () => {
+    const f = { positionTitles: ["Nurse", "Pharmacist"] };
+    expect(buildUsajobsParams(f, 1, 50).some(([k]) => k === "PositionTitle")).toBe(false);
+    expect(buildUsajobsParams(f, 1, 50, "Pharmacist")).toContainEqual([
+      "PositionTitle",
+      "Pharmacist",
+    ]);
+  });
+
   it("percent-encodes spaces, separators and reserved characters", () => {
     const url = buildUsajobsUrl(
-      { positionTitle: "R&D Engineer", locationName: ["Washington DC, District of Columbia", "Reno"] },
+      { locationName: ["Washington DC, District of Columbia", "Reno"] },
       1,
       50,
+      "R&D Engineer",
     );
     expect(url).toContain("PositionTitle=R%26D%20Engineer");
     expect(url).toContain(
@@ -193,6 +205,224 @@ describe("param translation + URL encoding", () => {
     // Exactly one '?' and no stray raw separators inside values.
     expect(url.split("?")).toHaveLength(2);
     expect(url.split("&").length).toBe(5); // title, location, Fields, per-page, page
+  });
+});
+
+describe("toUsajobsFilters (shared titles/locations -> request filters)", () => {
+  it("derives positionTitles and locationName from targetTitles and locations", () => {
+    const f = toUsajobsFilters({
+      keyword: "k",
+      targetTitles: ["Nurse", "RN"],
+      locations: ["Denver", "Reno"],
+      radius: 25,
+      strictLocation: true,
+      topK: 5,
+    });
+    expect(f).toMatchObject({
+      keyword: "k",
+      positionTitles: ["Nurse", "RN"],
+      locationName: ["Denver", "Reno"],
+      radius: 25,
+    });
+    expect(f).not.toHaveProperty("targetTitles");
+    expect(f).not.toHaveProperty("locations");
+  });
+
+  it("omits empty lists and dedupes case-insensitively", () => {
+    const f = toUsajobsFilters({
+      keyword: "k",
+      targetTitles: [],
+      locations: ["Reno", "reno"],
+    });
+    expect(f).not.toHaveProperty("positionTitles");
+    expect(f.locationName).toEqual(["Reno"]);
+    expect(toUsajobsFilters({ targetTitles: ["A", "a", "B"] }).positionTitles).toEqual(["A", "B"]);
+  });
+
+  it("builds one multi-location request URL for the saved locations", () => {
+    const f = toUsajobsFilters({ targetTitles: ["Nurse"], locations: ["Denver, Colorado", "Reno"], radius: 10 });
+    const url = buildUsajobsUrl(f, 1, 50, f.positionTitles![0]);
+    expect(url).toContain("PositionTitle=Nurse");
+    expect(url).toContain("LocationName=Denver%2C%20Colorado%3BReno");
+    expect(url).toContain("Radius=10");
+  });
+});
+
+describe("multiple position titles (one search per title)", () => {
+  const item = (id: string) => ({
+    MatchedObjectId: id,
+    MatchedObjectDescriptor: {
+      PositionTitle: `Job ${id}`,
+      OrganizationName: "Agency",
+      PositionURI: `https://www.usajobs.gov/job/${id}`,
+    },
+  });
+  const result = (ids: string[], totalAll = ids.length) => ({
+    SearchResult: {
+      SearchResultCount: ids.length,
+      SearchResultCountAll: totalAll,
+      SearchResultItems: ids.map(item),
+      UserArea: { NumberOfPages: 1 },
+    },
+  });
+  const TITLES = { positionTitles: ["Nurse", "Pharmacist", "Dentist"] };
+  const titleOf = (call: unknown[]) =>
+    new URL(call[0] as string).searchParams.get("PositionTitle");
+  const withNoDelay = async (fn: () => Promise<void>) => {
+    const prev = APP_CONSTANTS.USAJOBS_PAGE_DELAY_MS;
+    (APP_CONSTANTS as any).USAJOBS_PAGE_DELAY_MS = 0;
+    try {
+      await fn();
+    } finally {
+      (APP_CONSTANTS as any).USAJOBS_PAGE_DELAY_MS = prev;
+    }
+  };
+  const credentialed = () =>
+    mockResolveApiKey.mockImplementation(async (_u: unknown, provider: string) =>
+      provider === "usajobs" ? KEY : EMAIL,
+    );
+
+  it("runs one request per title and merges the results, deduped by MatchedObjectId", async () => {
+    const spy = stubFetch(res(result(["1", "2"])), res(result(["2", "3"])), res(result(["3", "4"])));
+    const s = seams();
+    const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, s);
+
+    expect(spy.mock.calls.map(titleOf)).toEqual(["Nurse", "Pharmacist", "Dentist"]);
+    expect(out.jobs.map((j) => j.title)).toEqual(["Job 1", "Job 2", "Job 3", "Job 4"]);
+    expect(out.failure).toBeUndefined();
+    expect(out.truncated).toBe(false);
+    expect(out.skipped).toBe(0); // duplicates are merged, not "skipped"
+    expect(out.pagesFetched).toBe(3);
+    // overlapping per-search totals cannot be summed into a distinct count
+    expect(out.totalAvailable).toBeUndefined();
+    // politeness pause before each additional search
+    expect(s.sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("dedupes by PositionURI when MatchedObjectId is absent", async () => {
+    const noId = (id: string) => ({ ...item(id), MatchedObjectId: undefined });
+    const body = (ids: string[]) => ({
+      SearchResult: { SearchResultItems: ids.map(noId), UserArea: { NumberOfPages: 1 } },
+    });
+    stubFetch(res(body(["1"])), res(body(["1", "2"])));
+    const out = await fetchUsajobsJobs(creds, { positionTitles: ["A", "B"] }, seams());
+    expect(out.jobs.map((j) => j.title)).toEqual(["Job 1", "Job 2"]);
+  });
+
+  it("without titles it is one search with no PositionTitle", async () => {
+    const spy = stubFetch(res(result(["1"])));
+    await fetchUsajobsJobs(creds, FILTERS, seams());
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(titleOf(spy.mock.calls[0])).toBeNull();
+  });
+
+  it("paginates each title and shares the page ceiling across them", async () => {
+    let n = 0;
+    const spy = vi.spyOn(global, "fetch").mockImplementation(() => {
+      const body = fullPage(n * PAGE_SIZE, PAGE_SIZE);
+      n++;
+      return Promise.resolve(res(body));
+    });
+    const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, seams());
+    expect(spy).toHaveBeenCalledTimes(APP_CONSTANTS.USAJOBS_MAX_PAGES);
+    expect(out.truncated).toBe(true);
+    expect(out.failure).toBeUndefined();
+    // the first (broad) title used the whole budget; later titles never ran
+    expect(new Set(spy.mock.calls.map(titleOf))).toEqual(new Set(["Nurse"]));
+  });
+
+  it("flags truncation when a shared ceiling is used up before the last title runs", async () => {
+    const prev = APP_CONSTANTS.USAJOBS_MAX_PAGES;
+    (APP_CONSTANTS as any).USAJOBS_MAX_PAGES = 1;
+    try {
+      const spy = stubFetch(res(result(["1"])));
+      const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, seams());
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(out.truncated).toBe(true);
+      expect(out.jobs).toHaveLength(1);
+    } finally {
+      (APP_CONSTANTS as any).USAJOBS_MAX_PAGES = prev;
+    }
+  });
+
+  it("a failing title after others returned jobs is a partial result, never clean", async () => {
+    stubFetch(res(result(["1", "2"])), res({}, { status: 400 }), res(result(["3"])));
+    const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, seams());
+    // the remaining titles still ran
+    expect(out.jobs.map((j) => j.title)).toEqual(["Job 1", "Job 2", "Job 3"]);
+    expect(out.failure).toMatchObject({ kind: "invalid_request", status: 400 });
+  });
+
+  it("keeps the first failure when several titles fail", async () => {
+    stubFetch(res({}, { status: 400 }), res({}, { status: 404 }), res(result(["1"])));
+    const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, seams());
+    expect(out.jobs).toHaveLength(1);
+    expect(out.failure).toMatchObject({ kind: "invalid_request", status: 400 });
+  });
+
+  it.each([
+    ["auth", { status: 401 }],
+    ["rate_limited", { status: 429, headers: { "retry-after": "999" } }],
+  ])("a %s failure stops the remaining titles", async (kind, init) => {
+    const spy = stubFetch(res(result(["1"])), res({}, init));
+    const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, seams());
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(out.jobs).toHaveLength(1);
+    expect(out.failure?.kind).toBe(kind);
+  });
+
+  it("a deadline between titles keeps what was fetched, flagged as timeout", async () => {
+    const spy = stubFetch(res(result(["1"])));
+    const out = await fetchUsajobsJobs(creds, { ...FILTERS, ...TITLES }, {
+      random: () => 0.5,
+      timeoutMs: 20,
+      sleep: (_ms, signal) =>
+        new Promise((_r, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(out.jobs).toHaveLength(1);
+    expect(out.failure?.kind).toBe("timeout");
+  });
+
+  it("each search retries on its own under the shared attempt policy", async () => {
+    const spy = stubFetch(res({}, { status: 503 }), res(result(["1"])), res(result(["2"])));
+    const out = await fetchUsajobsJobs(creds, { positionTitles: ["A", "B"] }, seams());
+    expect(spy.mock.calls.map(titleOf)).toEqual(["A", "A", "B"]);
+    expect(out.jobs).toHaveLength(2);
+    expect(out.failure).toBeUndefined();
+  });
+
+  it("searchUsajobsJobs derives the searches from the saved titles and locations", async () => {
+    credentialed();
+    const spy = stubFetch(res(result(["1"])), res(result(["2"])));
+    await withNoDelay(async () => {
+      const out = await searchUsajobsJobs({
+        userId: "u1",
+        config: { targetTitles: ["Nurse", "RN"], locations: ["Denver", "Reno"], radius: 5 },
+      });
+      expect(out.jobs).toHaveLength(2);
+      expect(out.errors).toEqual([]);
+      expect(spy.mock.calls.map(titleOf)).toEqual(["Nurse", "RN"]);
+      for (const call of spy.mock.calls) {
+        expect(new URL(call[0] as string).searchParams.get("LocationName")).toBe("Denver;Reno");
+      }
+    });
+  });
+
+  it("searchUsajobsJobs reports a failed title as an error even though other titles returned jobs", async () => {
+    credentialed();
+    stubFetch(res(result(["1"])), res({}, { status: 400 }));
+    await withNoDelay(async () => {
+      const out = await searchUsajobsJobs({
+        userId: "u1",
+        config: { targetTitles: ["Nurse", "RN"] },
+      });
+      expect(out.jobs).toHaveLength(1);
+      expect(out.errors).toHaveLength(1);
+      expect(out.errors[0].reason).toMatch(/400.*partial/);
+    });
   });
 });
 

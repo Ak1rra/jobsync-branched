@@ -59,10 +59,13 @@ export interface AshbySourceConfig
 // USAJOBS is query-based, not a company watchlist: there is no `companies`.
 // The server-side filters (UsajobsFilters) narrow the API query; the shared
 // targetTitles/keywords/locations/strictLocation/topK/saveUnanalyzed fields
-// drive the same client-side ranking pipeline as the other boards.
+// drive the same client-side ranking pipeline as the other boards. The shared
+// targetTitles and locations are ALSO the server-side title/location search
+// (single source of truth), so the filters' own positionTitles/locationName
+// are derived at request time and never stored.
 export interface UsajobsSourceConfig
   extends Omit<GreenhouseSourceConfig, "companies">,
-    UsajobsFilters {}
+    Omit<UsajobsFilters, "positionTitles" | "locationName"> {}
 
 export interface SourceConfig {
   greenhouse?: GreenhouseSourceConfig;

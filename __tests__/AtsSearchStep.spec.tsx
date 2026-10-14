@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AtsSearchStep } from "@/components/automations/AtsSearchStep";
 import { UsajobsSearchStep } from "@/components/automations/UsajobsSearchStep";
@@ -165,6 +165,27 @@ describe("AtsSearchStep - watchlist boards unchanged", () => {
       expect(screen.queryByText(/USAJOBS/i)).toBeNull();
     },
   );
+
+  it.each(["greenhouse", "lever", "ashby"] as const)(
+    "%s keeps its own target-title, location and strict-location fields",
+    (provider) => {
+      render(
+        <AtsSearchStep
+          provider={provider}
+          value={{ companies: [] } as any}
+          onChange={vi.fn()}
+        />,
+      );
+
+      expect(screen.getByText("Target job titles")).toBeInTheDocument();
+      expect(screen.getByText("Locations")).toBeInTheDocument();
+      expect(screen.getByText("Keywords / skills")).toBeInTheDocument();
+      expect(
+        screen.getByText("Only show jobs in these locations"),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Position titles")).toBeNull();
+    },
+  );
 });
 
 describe("UsajobsSearchStep", () => {
@@ -211,15 +232,24 @@ describe("UsajobsSearchStep", () => {
     render(<Harness spy={vi.fn()} />);
 
     expect(screen.getByLabelText("Keyword")).toBeInTheDocument();
-    expect(screen.getByLabelText("Position title")).toBeInTheDocument();
-    expect(screen.getByLabelText("Search locations")).toBeInTheDocument();
+    expect(screen.getByLabelText("Position titles")).toBeInTheDocument();
+    expect(screen.getByLabelText("Locations")).toBeInTheDocument();
     expect(screen.getByLabelText("Agency codes")).toBeInTheDocument();
     expect(
       screen.getByLabelText("Occupational series codes"),
     ).toBeInTheDocument();
-    // Shared ranking fields are still present.
-    expect(screen.getByText("Target job titles")).toBeInTheDocument();
+    // Shared ranking fields are still present...
+    expect(screen.getByText("Keywords / skills")).toBeInTheDocument();
     expect(screen.getByText(/Jobs analyzed per run/)).toBeInTheDocument();
+    // ...but titles and locations appear exactly once, not a second time.
+    expect(screen.queryByText("Target job titles")).toBeNull();
+    expect(screen.queryByText("Position title")).toBeNull();
+    expect(screen.queryByText("Search locations")).toBeNull();
+    expect(screen.getAllByText("Locations")).toHaveLength(1);
+    expect(screen.getAllByText("Position titles")).toHaveLength(1);
+    expect(
+      screen.getAllByText("Only show jobs in these locations"),
+    ).toHaveLength(1);
     expect(
       screen.queryByRole("button", { name: /search companies/i }),
     ).toBeNull();
@@ -248,17 +278,102 @@ describe("UsajobsSearchStep", () => {
     expect(last(spy)).not.toHaveProperty("keyword");
   });
 
-  it("adds search locations as chips and enables the radius", { timeout: 20000 }, async () => {
+  it("adds locations as chips and enables the radius", { timeout: 20000 }, async () => {
     const spy = vi.fn();
     render(<Harness spy={spy} />);
     expect(screen.getByLabelText("Radius")).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Search locations"), "Denver{Enter}");
-    expect(last(spy).locationName).toEqual(["Denver"]);
+    await user.type(screen.getByLabelText("Locations"), "Denver{Enter}");
+    expect(last(spy).locations).toEqual(["Denver"]);
+    expect(last(spy)).not.toHaveProperty("locationName");
     expect(screen.getByLabelText("Radius")).toBeEnabled();
 
     await user.type(screen.getByLabelText("Radius"), "25");
     expect(last(spy).radius).toBe(25);
+  });
+
+  it("adds several locations (a location may contain a comma) and dedupes", { timeout: 20000 }, async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    const input = screen.getByLabelText("Locations");
+
+    await user.type(input, "Washington, District of Columbia{Enter}");
+    await user.type(input, "Reno, Nevada{Enter}");
+    await user.type(input, "reno, nevada{Enter}");
+
+    expect(last(spy).locations).toEqual([
+      "Washington, District of Columbia",
+      "Reno, Nevada",
+    ]);
+    await user.click(screen.getByRole("button", { name: "Remove Reno, Nevada" }));
+    expect(last(spy).locations).toEqual(["Washington, District of Columbia"]);
+  });
+
+  it("rejects a location containing ';'", { timeout: 20000 }, async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+
+    await user.type(screen.getByLabelText("Locations"), "A;B{Enter}");
+
+    expect(screen.getByText(/cannot contain ';'/i)).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("adds several position titles as chips, capped at five", { timeout: 20000 }, async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    const input = screen.getByLabelText("Position titles");
+
+    await user.type(input, "IT Specialist{Enter}");
+    await user.type(input, "Data Scientist{Enter}");
+    await user.type(input, "it specialist{Enter}");
+    expect(last(spy).targetTitles).toEqual(["IT Specialist", "Data Scientist"]);
+    expect(last(spy)).not.toHaveProperty("positionTitle");
+    // a satisfied criterion: no "add a criterion" alert
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    for (const t of ["A", "B", "C"]) await user.type(input, `${t}{Enter}`);
+    expect(last(spy).targetTitles).toHaveLength(5);
+    expect(input).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Remove A" }));
+    expect(last(spy).targetTitles).toEqual(["IT Specialist", "Data Scientist", "B", "C"]);
+    expect(input).toBeEnabled();
+  });
+
+  it("toggles strict location beside the locations field, only once a location exists", { timeout: 20000 }, async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    // The label's row also holds the switch (the run options have their own).
+    const strict = () =>
+      within(
+        screen.getByText("Only show jobs in these locations").parentElement!
+          .parentElement!,
+      ).getByRole("switch");
+    expect(strict()).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Locations"), "Denver{Enter}");
+    expect(strict()).toBeEnabled();
+    await user.click(strict());
+    expect(last(spy).strictLocation).toBe(true);
+  });
+
+  it("shows saved titles and locations in the one field each", () => {
+    render(
+      <Harness
+        initial={{
+          ...base,
+          targetTitles: ["Nurse", "RN"],
+          locations: ["Denver"],
+          radius: 10,
+        }}
+        spy={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Nurse")).toBeInTheDocument();
+    expect(screen.getByText("RN")).toBeInTheDocument();
+    expect(screen.getByText("Denver")).toBeInTheDocument();
+    expect(screen.getByLabelText("Radius")).toHaveValue(10);
   });
 
   it("rejects malformed agency and series codes where they are typed", { timeout: 20000 }, async () => {

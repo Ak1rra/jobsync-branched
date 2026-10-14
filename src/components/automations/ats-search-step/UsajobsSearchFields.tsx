@@ -21,6 +21,8 @@ import {
 import {
   USAJOBS_CLEARANCE_CODES,
   USAJOBS_HIRING_PATHS,
+  USAJOBS_MAX_LOCATIONS,
+  USAJOBS_MAX_TITLES,
   USAJOBS_SCHEDULE_CODES,
   USAJOBS_SORT_DIRECTIONS,
   USAJOBS_SORT_FIELDS,
@@ -29,6 +31,7 @@ import {
   type UsajobsSortField,
   type UsajobsWhoMayApply,
 } from "@/lib/scraper/usajobs/types";
+import { StrictLocationToggle } from "./TargetingFields";
 import type { UsajobsConfigValue } from "./types";
 import { hasSecondaryUsajobsFilters } from "./usajobsConfig";
 import {
@@ -57,6 +60,10 @@ interface StringListInputProps {
   // Returns the normalized value, or null when it is not acceptable.
   normalize?: (raw: string) => string | null;
   invalidMessage?: string;
+  maxItems?: number;
+  // Entries that may themselves contain commas (a title, "City, State") are
+  // added by Enter or blur only; comma-separated lists also split on ','.
+  splitOnComma?: boolean;
 }
 
 // Free-text chip list (Enter or comma adds). Entries are checked against the
@@ -70,14 +77,15 @@ function StringListInput({
   onChange,
   normalize = (raw) => raw,
   invalidMessage,
+  maxItems = MAX_LIST_ITEMS,
+  splitOnComma = true,
 }: StringListInputProps) {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const full = values.length >= MAX_LIST_ITEMS;
+  const full = values.length >= maxItems;
 
   const commit = () => {
-    const parts = input
-      .split(",")
+    const parts = (splitOnComma ? input.split(",") : [input])
       .map((p) => p.trim())
       .filter(Boolean);
     if (parts.length === 0) return;
@@ -88,8 +96,10 @@ function StringListInput({
         setError(invalidMessage ?? `"${part}" is not valid.`);
         return;
       }
-      if (next.length >= MAX_LIST_ITEMS) break;
-      if (!next.includes(normalized)) next.push(normalized);
+      if (next.length >= maxItems) break;
+      if (!next.some((v) => v.toLowerCase() === normalized.toLowerCase())) {
+        next.push(normalized);
+      }
     }
     setError(null);
     setInput("");
@@ -97,7 +107,7 @@ function StringListInput({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === ",") {
+    if (e.key === "Enter" || (splitOnComma && e.key === ",")) {
       e.preventDefault();
       commit();
     }
@@ -108,7 +118,7 @@ function StringListInput({
       <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}
-        placeholder={full ? `Up to ${MAX_LIST_ITEMS} entries` : placeholder}
+        placeholder={full ? `Up to ${maxItems} entries` : placeholder}
         value={input}
         disabled={full}
         onChange={(e) => setInput(e.target.value)}
@@ -280,6 +290,7 @@ const upperCode = (raw: string) =>
 const seriesCode = (raw: string) => (/^\d{4}$/.test(raw) ? raw : null);
 const locationText = (raw: string) =>
   raw.includes(";") || raw.length > 100 ? null : raw;
+const titleText = (raw: string) => (raw.length > 100 ? null : raw);
 
 const toOptions = <T extends string | number>(
   values: readonly T[],
@@ -292,15 +303,17 @@ interface UsajobsSearchFieldsProps {
 }
 
 // The server-side half of a USAJOBS automation: everything here becomes a
-// parameter of the Search API request. The shared ranking fields (titles,
-// keywords, top-K, ...) are rendered separately by the wizard step.
+// parameter of the Search API request. The position titles and locations are
+// the shared targetTitles / locations (one field each): they are both the
+// search and the ranking terms. The remaining ranking fields (keywords, top-K,
+// ...) are rendered separately by the wizard step.
 export function UsajobsSearchFields({
   value,
   onChange,
 }: UsajobsSearchFieldsProps) {
   const set = (patch: Partial<UsajobsConfigValue>) =>
     onChange({ ...value, ...patch });
-  const hasLocation = (value.locationName?.length ?? 0) > 0;
+  const hasLocation = (value.locations?.length ?? 0) > 0;
   const [moreOpen, setMoreOpen] = useState(() =>
     hasSecondaryUsajobsFilters(value),
   );
@@ -328,28 +341,30 @@ export function UsajobsSearchFields({
         </p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="usajobs-position-title">Position title</Label>
-        <Input
-          id="usajobs-position-title"
-          placeholder="e.g., IT Specialist"
-          value={value.positionTitle ?? ""}
-          onChange={(e) => set({ positionTitle: e.target.value })}
-        />
-        <p className="text-sm text-muted-foreground">
-          Matches the announcement&apos;s position title.
-        </p>
-      </div>
+      <StringListInput
+        id="usajobs-position-title"
+        label="Position titles"
+        placeholder="e.g., IT Specialist"
+        description={`Matched against the announcement's position title, and used to rank results. Press Enter to add each one (up to ${USAJOBS_MAX_TITLES}); each title is searched separately and the results are merged.`}
+        values={value.targetTitles ?? []}
+        onChange={(next) => set({ targetTitles: next })}
+        normalize={titleText}
+        invalidMessage="Titles cannot exceed 100 characters."
+        maxItems={USAJOBS_MAX_TITLES}
+        splitOnComma={false}
+      />
 
       <StringListInput
         id="usajobs-location-name"
-        label="Search locations"
+        label="Locations"
         placeholder="e.g., Washington, District of Columbia"
-        description="Sent to USAJOBS as the location filter. Press Enter to add each one. Separate from the ranking locations below."
-        values={value.locationName ?? []}
-        onChange={(next) => set({ locationName: next })}
+        description={`Searched on USAJOBS and used to rank results. Press Enter to add each one (up to ${USAJOBS_MAX_LOCATIONS}).`}
+        values={value.locations ?? []}
+        onChange={(next) => set({ locations: next })}
         normalize={locationText}
         invalidMessage="Locations cannot contain ';' or exceed 100 characters."
+        maxItems={USAJOBS_MAX_LOCATIONS}
+        splitOnComma={false}
       />
 
       <NumberField
@@ -361,8 +376,10 @@ export function UsajobsSearchFields({
         placeholder="Optional"
         disabled={!hasLocation}
         onChange={(next) => set({ radius: next })}
-        description="Search distance around the location. Requires a search location."
+        description="Search distance around the locations. Requires a location."
       />
+
+      <StrictLocationToggle value={value} onChange={onChange} />
 
       <StringListInput
         id="usajobs-organization"

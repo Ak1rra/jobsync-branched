@@ -1,6 +1,7 @@
 import { APP_CONSTANTS } from "@/lib/constants";
 import type { CreateAutomationInput } from "@/models/automation.schema";
 import type { JobBoard } from "@/models/automation.model";
+import { foldLegacyUsajobsConfig } from "@/lib/scraper/usajobs/sourceConfig";
 import type { AtsConfigValue } from "../AtsSearchStep";
 import type {
   UsajobsConfigValue,
@@ -56,12 +57,15 @@ export function parseEditSourceConfig(
   if (!sc) return undefined;
   try {
     const parsed = JSON.parse(sc);
-    return parsed?.greenhouse ||
-      parsed?.lever ||
-      parsed?.ashby ||
-      parsed?.usajobs
-      ? parsed
-      : undefined;
+    if (!(parsed?.greenhouse || parsed?.lever || parsed?.ashby || parsed?.usajobs)) {
+      return undefined;
+    }
+    // A USAJOBS config saved before titles/locations were unified keeps them
+    // in positionTitle/locationName; fold them into the shared fields so the
+    // edit form shows them in the one title and location field.
+    return parsed.usajobs
+      ? { ...parsed, usajobs: foldLegacyUsajobsConfig(parsed.usajobs) }
+      : parsed;
   } catch {
     return undefined;
   }

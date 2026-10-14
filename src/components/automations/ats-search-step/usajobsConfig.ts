@@ -37,14 +37,16 @@ export function cleanUsajobsConfig(cfg: UsajobsSourceConfig): UsajobsSourceConfi
     if (typeof value === "number" && Number.isNaN(value)) continue;
     out[key] = value;
   }
-  if (!Array.isArray(out.locationName)) delete out.radius;
+  if (!Array.isArray(out.locations) || out.locations.length === 0) {
+    delete out.radius;
+  }
   return out as UsajobsSourceConfig;
 }
 
 const FIELD_LABELS: Record<string, string> = {
   keyword: "Search criteria",
-  positionTitle: "Position title",
-  locationName: "Search locations",
+  targetTitles: "Position titles",
+  locations: "Locations",
   radius: "Radius",
   organization: "Agency codes",
   jobCategoryCode: "Occupational series",
@@ -95,8 +97,6 @@ export function isUsajobsConfigValid(cfg: UsajobsSourceConfig): boolean {
 const PRIMARY_KEYS = new Set<string>([
   ...RANKING_KEYS,
   "keyword",
-  "positionTitle",
-  "locationName",
   "radius",
   "organization",
   "jobCategoryCode",
@@ -132,13 +132,10 @@ export function summarizeUsajobsFilters(
   };
 
   add("Keyword", cfg.keyword);
-  add("Position title", cfg.positionTitle);
-  add(
-    "Search locations",
-    cfg.locationName?.length
-      ? `${list(cfg.locationName)}${cfg.radius ? ` (within ${cfg.radius})` : ""}`
-      : undefined,
-  );
+  // Titles and locations are the shared targetTitles / locations, which the
+  // review and detail views already list; only the USAJOBS-specific radius
+  // that goes with the locations is added here.
+  add("Radius", cfg.locations?.length && cfg.radius ? String(cfg.radius) : undefined);
   add("Agency codes", list(cfg.organization));
   add("Occupational series", list(cfg.jobCategoryCode));
 

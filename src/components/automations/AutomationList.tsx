@@ -37,6 +37,7 @@ import {
 import type { AutomationWithResume } from "@/models/automation.model";
 import { isRetiredBoard } from "@/models/automation.model";
 import { boardName } from "./ats-search-step/types";
+import { foldLegacyUsajobsConfig } from "@/lib/scraper/usajobs/sourceConfig";
 import { summarizeUsajobsFilters } from "./ats-search-step/usajobsConfig";
 import {
   deleteAutomation,
@@ -128,9 +129,13 @@ export function AutomationList({
           const retired = isRetiredBoard(automation.jobBoard);
           const ats = (() => {
             try {
-              return JSON.parse(automation.sourceConfig ?? "{}")[
+              const cfg = JSON.parse(automation.sourceConfig ?? "{}")[
                 automation.jobBoard
               ];
+              // Pre-unification USAJOBS rows keep title/locations in legacy keys.
+              return automation.jobBoard === "usajobs"
+                ? foldLegacyUsajobsConfig(cfg)
+                : cfg;
             } catch {
               return null;
             }
