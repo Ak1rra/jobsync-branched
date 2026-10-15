@@ -1,7 +1,7 @@
 import path from "path";
 import { APP_CONSTANTS } from "@/lib/constants";
 import { sniffFileType } from "@/lib/ai/import/extract-text";
-import { calculateNextRunAt } from "@/lib/scraper/schedule";
+import { calculateNextRunAtFor } from "@/lib/scraper/schedule";
 
 const NON_TERMINAL_RUN_STATUSES = new Set(["running", "cancelling"]);
 
@@ -70,8 +70,29 @@ export function normalizeAutomationRun<
 // Imported automations arrive with a nextRunAt in the past, so every one of
 // them would fire on the next hourly tick. Recompute forward instead.
 export function normalizeAutomation<
-  T extends { status: string; scheduleHour: number; nextRunAt: Date | null },
+  T extends {
+    status: string;
+    scheduleHour: number;
+    scheduleFrequency?: string;
+    scheduleDayOfWeek?: number | null;
+    nextRunAt: Date | null;
+  },
 >(row: T): T {
-  if (row.status !== "active") return { ...row, nextRunAt: null };
-  return { ...row, nextRunAt: calculateNextRunAt(row.scheduleHour) };
+  // A weekly row needs a valid weekday and a daily row carries none. A backup
+  // that breaks either is stored as daily so the label, the next run and a
+  // later edit all agree.
+  const day = row.scheduleDayOfWeek;
+  const weekly =
+    row.scheduleFrequency === "weekly" &&
+    typeof day === "number" &&
+    Number.isInteger(day) &&
+    day >= 0 &&
+    day <= 6;
+  const schedule = {
+    scheduleFrequency: weekly ? "weekly" : "daily",
+    scheduleDayOfWeek: weekly ? day : null,
+  };
+  const normalized = { ...row, ...schedule };
+  if (row.status !== "active") return { ...normalized, nextRunAt: null };
+  return { ...normalized, nextRunAt: calculateNextRunAtFor(normalized) };
 }

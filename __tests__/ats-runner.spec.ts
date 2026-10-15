@@ -97,6 +97,8 @@ const leverAutomation: Automation = {
   resumeId: "resume1",
   matchThreshold: 80,
   scheduleHour: 8,
+  scheduleFrequency: "daily",
+  scheduleDayOfWeek: null,
   nextRunAt: null,
   lastRunAt: null,
   status: "active",

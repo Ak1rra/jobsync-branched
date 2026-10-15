@@ -201,6 +201,8 @@ async function seedFullAccount() {
       location: "Remote",
       resumeId: resume.id,
       scheduleHour: 9,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 3,
       nextRunAt: new Date("2020-01-01T09:00:00"),
       status: "active",
     },
@@ -309,6 +311,11 @@ describe("backup round trip", () => {
     const automation = await prisma.automation.findFirstOrThrow({ where: { userId } });
     expect(automation.status).toBe("active");
     expect(automation.nextRunAt!.getTime()).toBeGreaterThan(Date.now());
+    // The weekly schedule survives, and the recomputed run lands on its day.
+    expect(automation.scheduleFrequency).toBe("weekly");
+    expect(automation.scheduleDayOfWeek).toBe(3);
+    expect(automation.nextRunAt!.getDay()).toBe(3);
+    expect(automation.nextRunAt!.getHours()).toBe(9);
 
     // The wipe set is honoured in both directions.
     expect(await prisma.apiKey.count({ where: { userId } })).toBe(1);

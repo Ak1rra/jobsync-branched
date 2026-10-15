@@ -8,8 +8,6 @@ import {
   USAJOBS_CLEARANCE_CODES,
   USAJOBS_FIELDS,
   USAJOBS_HIRING_PATHS,
-  USAJOBS_MAX_LOCATIONS,
-  USAJOBS_MAX_TITLES,
   USAJOBS_SCHEDULE_CODES,
   USAJOBS_SORT_DIRECTIONS,
   USAJOBS_SORT_FIELDS,
@@ -77,7 +75,6 @@ export const AshbySourceConfigSchema = GreenhouseSourceConfigSchema.extend({
 // Values interpolated into the query string are allowlisted here so a
 // directly-POSTed config cannot smuggle ';' / '&' separators past the save
 // boundary. Enum/range checks mirror the documented API value lists.
-const usajobsText = (max: number) => z.string().trim().min(1).max(max);
 const usajobsList = <T extends z.ZodType>(item: T) => z.array(item).min(1).max(10);
 const intOf = <T extends readonly number[]>(allowed: T) =>
   z
@@ -88,14 +85,14 @@ const PAY_GRADE = z.string().regex(/^(0[1-9]|1[0-5])$/, "Pay grade must be 01-15
 
 export const UsajobsSourceConfigSchema = z
   .object({
-    // Shared with the other boards (client-side ranking pipeline). For
-    // USAJOBS they are ALSO the server-side search: each title is one
-    // PositionTitle search (hence the low cap) and the locations are sent
-    // joined by ';' as LocationName (hence no ';' inside one).
-    targetTitles: z
-      .array(z.string().min(1).max(100))
-      .max(USAJOBS_MAX_TITLES)
-      .optional(),
+    // Shared with the other boards (client-side ranking pipeline), with the
+    // same limits: every entry ranks results. For USAJOBS they are ALSO the
+    // server-side search, but only the first few are sent (one PositionTitle
+    // search per title, one Keyword search per keyword when there are no
+    // titles, one ';'-joined LocationName; see searchPlan), so there is no
+    // list cap here. No ';' inside a location, as it is the LocationName
+    // separator.
+    targetTitles: z.array(z.string().min(1).max(100)).optional(),
     keywords: z.array(z.string().min(1).max(100)).optional(),
     locations: z
       .array(
@@ -105,13 +102,11 @@ export const UsajobsSourceConfigSchema = z
           .max(100)
           .refine((v) => !v.includes(";"), "No ';' allowed"),
       )
-      .max(USAJOBS_MAX_LOCATIONS)
       .optional(),
     strictLocation: z.boolean().optional(),
     topK: z.number().int().min(1).max(APP_CONSTANTS.ATS_LISTING_CAP).optional(),
     saveUnanalyzed: z.boolean().optional(),
     // Server-side filters (documented GET /api/Search parameters).
-    keyword: usajobsText(200).optional(),
     // The docs give no unit or ceiling; 500 is a conservative bound.
     radius: z.number().int().min(1).max(500).optional(),
     organization: usajobsList(z.string().regex(/^[A-Za-z0-9]{1,10}$/)).optional(),
@@ -141,14 +136,14 @@ export const UsajobsSourceConfigSchema = z
     // A query with no narrowing criterion would pull an arbitrary slice of
     // every open federal job and truncate it at the fetch ceiling.
     if (
-      !cfg.keyword &&
+      !cfg.keywords?.length &&
       !cfg.targetTitles?.length &&
       !cfg.locations?.length &&
       !cfg.organization?.length &&
       !cfg.jobCategoryCode?.length
     ) {
       issue(
-        "keyword",
+        "keywords",
         "Add at least one search criterion (keyword, title, location, agency or series)",
       );
     }
@@ -202,6 +197,9 @@ function addMissingSourceIssue(
   }
 }
 
+export const ScheduleFrequencySchema = z.enum(["daily", "weekly"]);
+const ScheduleDayOfWeekSchema = z.number().int().min(0).max(6).nullable();
+
 export const CreateAutomationSchema = z
   .object({
     name: z.string().min(1, "Name is required").max(100),
@@ -212,8 +210,23 @@ export const CreateAutomationSchema = z
     resumeId: z.string().uuid("Invalid resume"),
     matchThreshold: z.number().min(0).max(100),
     scheduleHour: z.number().min(0).max(23),
+    // Omitted means daily, so callers written before weekly keep working.
+    scheduleFrequency: ScheduleFrequencySchema.optional(),
+    scheduleDayOfWeek: ScheduleDayOfWeekSchema.optional(),
   })
-  .superRefine((data, ctx) => addMissingSourceIssue(data, ctx));
+  .superRefine((data, ctx) => {
+    addMissingSourceIssue(data, ctx);
+    if (
+      data.scheduleFrequency === "weekly" &&
+      (data.scheduleDayOfWeek === undefined || data.scheduleDayOfWeek === null)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["scheduleDayOfWeek"],
+        message: "Choose a day of the week",
+      });
+    }
+  });
 
 export const UpdateAutomationSchema = z
   .object({
@@ -225,6 +238,8 @@ export const UpdateAutomationSchema = z
     resumeId: z.string().uuid("Invalid resume").optional(),
     matchThreshold: z.number().min(0).max(100).optional(),
     scheduleHour: z.number().min(0).max(23).optional(),
+    scheduleFrequency: ScheduleFrequencySchema.optional(),
+    scheduleDayOfWeek: ScheduleDayOfWeekSchema.optional(),
   })
   .superRefine((data, ctx) => {
     if (!data.jobBoard) return;

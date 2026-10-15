@@ -39,6 +39,7 @@ import { isRetiredBoard } from "@/models/automation.model";
 import { boardName } from "./ats-search-step/types";
 import { foldLegacyUsajobsConfig } from "@/lib/scraper/usajobs/sourceConfig";
 import { summarizeUsajobsFilters } from "./ats-search-step/usajobsConfig";
+import { formatSchedule } from "@/lib/scraper/schedule";
 import {
   deleteAutomation,
   pauseAutomation,
@@ -272,10 +273,7 @@ export function AutomationList({
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <Clock className="h-4 w-4" />
-                    <span>
-                      {automation.scheduleHour.toString().padStart(2, "0")}:00
-                      daily
-                    </span>
+                    <span>{formatSchedule(automation)}</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <FileText className="h-4 w-4" />

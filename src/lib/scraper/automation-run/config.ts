@@ -19,8 +19,9 @@ export interface AtsRunConfig {
 // Re-validated at run time (not just at save) so a hand-edited or legacy row
 // cannot send an unvalidated value into the query string. Returns the ranking
 // fields in the shared shape plus the validated USAJOBS query config. Rows
-// saved before titles/locations were unified (positionTitle / locationName)
-// are folded into targetTitles / locations first, so they keep working.
+// saved before titles/keywords/locations were unified (positionTitle /
+// keyword / locationName) are folded into targetTitles / keywords / locations
+// first, so they keep working.
 export function parseUsajobsConfig(
   sourceConfig: string | null | undefined,
 ): { query: UsajobsSourceConfig; ranking: Omit<AtsRunConfig, "companies"> } | null {
@@ -35,10 +36,10 @@ export function parseUsajobsConfig(
       ranking: {
         // The titles/locations are both the server-side search and the
         // ranking terms (one list each), so a job the API matched by synonym
-        // still ranks against what the user asked for. The server-side
-        // keyword is likewise a ranking term.
+        // still ranks against what the user asked for. Keywords are likewise
+        // both (a saved legacy `keyword` is folded into them above).
         targetTitles: q.targetTitles ?? [],
-        keywords: [...(q.keywords ?? []), ...(q.keyword ? [q.keyword] : [])],
+        keywords: q.keywords ?? [],
         locations: q.locations ?? [],
         strictLocation: !!q.strictLocation,
         topK: q.topK ?? APP_CONSTANTS.MAX_JOBS_PER_RUN,

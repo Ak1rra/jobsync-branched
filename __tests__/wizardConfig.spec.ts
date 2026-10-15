@@ -9,6 +9,7 @@ import {
   boardName,
 } from "@/components/automations/ats-search-step/types";
 import { UsajobsSourceConfigSchema } from "@/models/automation.schema";
+import { cleanUsajobsConfig } from "@/components/automations/ats-search-step/usajobsConfig";
 
 describe("parseEditSourceConfig", () => {
   it("returns undefined for null/blank input", () => {
@@ -40,29 +41,62 @@ describe("parseEditSourceConfig", () => {
   });
 });
 
-describe("parseEditSourceConfig - usajobs legacy title/location", () => {
+describe("parseEditSourceConfig - usajobs legacy keyword/title/location", () => {
   const parse = (usajobs: unknown) =>
     parseEditSourceConfig(JSON.stringify({ usajobs }))?.usajobs as any;
 
-  it("folds positionTitle and locationName into the shared fields for the edit form", () => {
+  it("folds keyword, positionTitle and locationName into the shared fields for the edit form", () => {
     const cfg = parse({
       keyword: "x",
       positionTitle: "IT Specialist",
       locationName: ["Denver", "reno"],
       radius: 20,
       targetTitles: ["Engineer"],
+      keywords: ["X", "Python"],
       locations: ["Reno"],
     });
+    expect(cfg).not.toHaveProperty("keyword");
+    expect(cfg.keywords).toEqual(["X", "Python"]);
     expect(cfg).not.toHaveProperty("positionTitle");
     expect(cfg).not.toHaveProperty("locationName");
-    expect(cfg.targetTitles).toEqual(["Engineer", "IT Specialist"]);
-    expect(cfg.locations).toEqual(["Reno", "Denver"]);
+    expect(cfg.targetTitles).toEqual(["IT Specialist", "Engineer"]);
+    expect(cfg.locations).toEqual(["Denver", "Reno"]);
     expect(cfg.radius).toBe(20);
     expect(UsajobsSourceConfigSchema.safeParse(cfg).success).toBe(true);
   });
 
+  it("round-trips a legacy keyword + positionTitle + locationName config through edit and save", () => {
+    const legacy = {
+      keyword: "data scientist",
+      positionTitle: "Statistician",
+      locationName: ["Denver", "Reno"],
+      radius: 25,
+      hiringPath: ["vet"],
+      topK: 7,
+    };
+    // Edit form: the legacy keys appear in the three shared fields.
+    const form = parse(legacy);
+    expect(form).toEqual({
+      keywords: ["data scientist"],
+      targetTitles: ["Statistician"],
+      locations: ["Denver", "Reno"],
+      radius: 25,
+      hiringPath: ["vet"],
+      topK: 7,
+    });
+    // Save: the cleaned form validates and carries no legacy key.
+    const saved = cleanUsajobsConfig(form);
+    const parsed = UsajobsSourceConfigSchema.safeParse(saved);
+    expect(parsed.success).toBe(true);
+    expect(saved).not.toHaveProperty("keyword");
+    expect(saved).not.toHaveProperty("positionTitle");
+    expect(saved).not.toHaveProperty("locationName");
+    // Re-opening what was saved changes nothing (folding is idempotent).
+    expect(parse(saved)).toEqual(saved);
+  });
+
   it("leaves a current config and the other boards untouched", () => {
-    const current = { keyword: "x", targetTitles: ["A"], locations: ["B"] };
+    const current = { keywords: ["x"], targetTitles: ["A"], locations: ["B"] };
     expect(parse(current)).toEqual(current);
     const lever = { lever: { companies: [], locationName: ["kept"] } };
     expect(parseEditSourceConfig(JSON.stringify(lever))).toEqual(lever);
@@ -71,9 +105,9 @@ describe("parseEditSourceConfig - usajobs legacy title/location", () => {
 
 describe("parseEditSourceConfig - usajobs", () => {
   it("keeps a USAJOBS config so editing a USAJOBS automation keeps its query", () => {
-    const sc = JSON.stringify({ usajobs: { keyword: "nurse", radius: 10 } });
+    const sc = JSON.stringify({ usajobs: { keywords: ["nurse"], radius: 10 } });
     expect(parseEditSourceConfig(sc)).toEqual({
-      usajobs: { keyword: "nurse", radius: 10 },
+      usajobs: { keywords: ["nurse"], radius: 10 },
     });
   });
 
@@ -99,7 +133,7 @@ describe("EMPTY_USAJOBS", () => {
       false,
     );
     expect(
-      UsajobsSourceConfigSchema.safeParse({ ...EMPTY_USAJOBS, keyword: "x" })
+      UsajobsSourceConfigSchema.safeParse({ ...EMPTY_USAJOBS, keywords: ["x"] })
         .success,
     ).toBe(true);
   });

@@ -54,8 +54,9 @@ window.HTMLElement.prototype.releasePointerCapture = vi.fn();
 const RESUME_ID = "6f1f3c1e-2a0b-4a54-9b7f-0d3c5a8e9b11";
 const resumes = [{ id: RESUME_ID, title: "My Resume", sectionCount: 6 }];
 
-// Saved by the previous version: the server-side title/locations lived in
-// positionTitle/locationName beside the ranking targetTitles/locations.
+// Saved by the previous version: the server-side keyword/title/locations lived
+// in keyword/positionTitle/locationName beside the ranking keywords/
+// targetTitles/locations.
 const legacyUsajobsAutomation = {
   id: "auto-1",
   userId: "u1",
@@ -71,7 +72,7 @@ const legacyUsajobsAutomation = {
       radius: 25,
       hiringPath: ["vet"],
       targetTitles: ["Data Scientist"],
-      keywords: [],
+      keywords: ["Python"],
       locations: ["Reno"],
       strictLocation: false,
       topK: 7,
@@ -85,16 +86,16 @@ const legacyUsajobsAutomation = {
   resume: { id: RESUME_ID, title: "My Resume" },
 } as any;
 
-// The same automation as saved now: one titles list and one locations list.
+// The same automation as saved now: one keywords, one titles and one
+// locations list.
 const usajobsAutomation = {
   ...legacyUsajobsAutomation,
   sourceConfig: JSON.stringify({
     usajobs: {
-      keyword: "data scientist",
       radius: 25,
       hiringPath: ["vet"],
       targetTitles: ["Data Scientist", "Statistician"],
-      keywords: [],
+      keywords: ["Python", "data scientist"],
       locations: ["Reno", "Denver"],
       strictLocation: false,
       topK: 7,
@@ -109,6 +110,12 @@ const user = userEvent.setup();
 // keystroke, which makes these tests slow under a loaded full-suite run.
 const enter = (el: HTMLElement, value: string) =>
   fireEvent.change(el, { target: { value } });
+
+// A chip field adds its entry on Enter.
+const addChip = (el: HTMLElement, value: string) => {
+  enter(el, value);
+  fireEvent.keyDown(el, { key: "Enter" });
+};
 
 // The wizard mounts every step at once, so the wizard tests below are heavier
 // than a single-component test and get a longer per-test timeout.
@@ -146,13 +153,13 @@ describe("AutomationWizard - USAJOBS", () => {
     await next();
 
     // Search step: a search form, not a company picker.
-    expect(await screen.findByLabelText("Keyword")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Keywords / skills")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /search companies/i }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
 
-    enter(screen.getByLabelText("Keyword"), "nurse");
+    addChip(screen.getByLabelText("Keywords / skills"), "nurse");
     expect(screen.getByRole("button", { name: /next/i })).toBeEnabled();
   });
 
@@ -173,9 +180,11 @@ describe("AutomationWizard - USAJOBS", () => {
     renderWizard(usajobsAutomation);
     await next();
 
-    expect(await screen.findByLabelText("Keyword")).toHaveValue(
-      "data scientist",
-    );
+    await screen.findByLabelText("Keywords / skills");
+    // Keywords, titles and locations are one field (one set of chips) each.
+    expect(screen.getAllByText("Python")).toHaveLength(1);
+    expect(screen.getAllByText("data scientist")).toHaveLength(1);
+    expect(screen.getAllByText("Keywords / skills")).toHaveLength(1);
     expect(screen.getByLabelText("Radius")).toHaveValue(25);
     expect(screen.getByText("Denver")).toBeInTheDocument();
     expect(screen.getByText("Reno")).toBeInTheDocument();
@@ -195,8 +204,11 @@ describe("AutomationWizard - USAJOBS", () => {
     renderWizard(legacyUsajobsAutomation);
     await next();
 
-    await screen.findByLabelText("Keyword");
-    // Folded: positionTitle joins targetTitles, locationName joins locations.
+    await screen.findByLabelText("Keywords / skills");
+    // Folded: keyword joins keywords, positionTitle joins targetTitles,
+    // locationName joins locations.
+    expect(screen.getByText("Python")).toBeInTheDocument();
+    expect(screen.getByText("data scientist")).toBeInTheDocument();
     expect(screen.getByText("Data Scientist")).toBeInTheDocument();
     expect(screen.getByText("Statistician")).toBeInTheDocument();
     expect(screen.getByText("Reno")).toBeInTheDocument();
@@ -208,15 +220,17 @@ describe("AutomationWizard - USAJOBS", () => {
   it("re-saves a legacy config in the unified shape", { timeout: 30000 }, async () => {
     renderWizard(legacyUsajobsAutomation);
     await next();
-    await screen.findByLabelText("Keyword");
+    await screen.findByLabelText("Keywords / skills");
     for (let i = 0; i < 4; i++) await next();
     await user.click(screen.getByRole("button", { name: /update automation/i }));
 
     await waitFor(() => expect(updateAutomation).toHaveBeenCalledTimes(1));
     const saved = updateAutomation.mock.calls[0][1].sourceConfig.usajobs;
-    expect(saved.targetTitles).toEqual(["Data Scientist", "Statistician"]);
-    expect(saved.locations).toEqual(["Reno", "Denver"]);
+    expect(saved.keywords).toEqual(["data scientist", "Python"]);
+    expect(saved.targetTitles).toEqual(["Statistician", "Data Scientist"]);
+    expect(saved.locations).toEqual(["Denver", "Reno"]);
     expect(saved.radius).toBe(25);
+    expect(saved).not.toHaveProperty("keyword");
     expect(saved).not.toHaveProperty("positionTitle");
     expect(saved).not.toHaveProperty("locationName");
   });
@@ -224,12 +238,14 @@ describe("AutomationWizard - USAJOBS", () => {
   it("saves an edited USAJOBS config under sourceConfig.usajobs", { timeout: 30000 }, async () => {
     renderWizard(usajobsAutomation);
     await next();
-    const keyword = await screen.findByLabelText("Keyword");
-    enter(keyword, "statistician");
+    const keywords = await screen.findByLabelText("Keywords / skills");
+    addChip(keywords, "statistician");
     for (let i = 0; i < 4; i++) await next(); // search -> resume -> match -> schedule -> review
 
     // The review step lists the USAJOBS filters instead of Companies.
-    expect(screen.getByText("statistician")).toBeInTheDocument();
+    expect(
+      screen.getByText("Python, data scientist, statistician"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Companies")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: /update automation/i }));
@@ -240,7 +256,7 @@ describe("AutomationWizard - USAJOBS", () => {
     expect(input.jobBoard).toBe("usajobs");
     expect(input.sourceConfig).toEqual({
       usajobs: expect.objectContaining({
-        keyword: "statistician",
+        keywords: ["Python", "data scientist", "statistician"],
         targetTitles: ["Data Scientist", "Statistician"],
         locations: ["Reno", "Denver"],
         radius: 25,
@@ -249,6 +265,7 @@ describe("AutomationWizard - USAJOBS", () => {
       }),
     });
     expect(input.sourceConfig.usajobs).not.toHaveProperty("companies");
+    expect(input.sourceConfig.usajobs).not.toHaveProperty("keyword");
     expect(input.sourceConfig.usajobs).not.toHaveProperty("positionTitle");
     expect(input.sourceConfig.usajobs).not.toHaveProperty("locationName");
   });
@@ -261,7 +278,7 @@ describe("AutomationWizard - USAJOBS", () => {
     expect(
       await screen.findByRole("button", { name: /search companies/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("Keyword")).toBeNull();
+    expect(screen.queryByLabelText("Keywords / skills")).toBeNull();
     expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
   });
 });
@@ -278,8 +295,8 @@ describe("AutomationSearchConfig - USAJOBS", () => {
     await user.click(screen.getByRole("button", { name: /show more/i }));
 
     expect(screen.queryByText("Companies")).toBeNull();
-    expect(screen.getByText("Keyword")).toBeInTheDocument();
-    expect(screen.getByText("data scientist")).toBeInTheDocument();
+    expect(screen.getByText("Keywords")).toBeInTheDocument();
+    expect(screen.getByText("Python, data scientist")).toBeInTheDocument();
     expect(screen.getByText("Radius")).toBeInTheDocument();
     expect(screen.getByText("25")).toBeInTheDocument();
     expect(screen.getByText("Veterans")).toBeInTheDocument();
@@ -291,7 +308,7 @@ describe("AutomationSearchConfig - USAJOBS", () => {
     expect(screen.queryByText("Target titles")).toBeNull();
   });
 
-  it("folds a legacy config's position title and locations into the same rows", async () => {
+  it("folds a legacy config's keyword, position title and locations into the same rows", async () => {
     render(
       <AutomationSearchConfig
         sourceConfig={legacyUsajobsAutomation.sourceConfig}
@@ -301,8 +318,9 @@ describe("AutomationSearchConfig - USAJOBS", () => {
     );
     await user.click(screen.getByRole("button", { name: /show more/i }));
 
-    expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
-    expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
+    expect(screen.getByText("Statistician, Data Scientist")).toBeInTheDocument();
+    expect(screen.getByText("Denver, Reno")).toBeInTheDocument();
+    expect(screen.getByText("data scientist, Python")).toBeInTheDocument();
   });
 
   it("still lists companies with board links for Greenhouse", async () => {
@@ -339,7 +357,7 @@ describe("AutomationList - USAJOBS", () => {
     renderList([usajobsAutomation]);
 
     expect(screen.getByText("USAJOBS")).toBeInTheDocument();
-    expect(screen.getByText("data scientist")).toBeInTheDocument();
+    expect(screen.getByText("Python, data scientist")).toBeInTheDocument();
     expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
     expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
   });
@@ -347,8 +365,9 @@ describe("AutomationList - USAJOBS", () => {
   it("shows a legacy USAJOBS card's position title and locations", () => {
     renderList([legacyUsajobsAutomation]);
 
-    expect(screen.getByText("Data Scientist, Statistician")).toBeInTheDocument();
-    expect(screen.getByText("Reno, Denver")).toBeInTheDocument();
+    expect(screen.getByText("data scientist, Python")).toBeInTheDocument();
+    expect(screen.getByText("Statistician, Data Scientist")).toBeInTheDocument();
+    expect(screen.getByText("Denver, Reno")).toBeInTheDocument();
   });
 
   it("leaves a Greenhouse card as it was", () => {
@@ -366,5 +385,129 @@ describe("AutomationList - USAJOBS", () => {
     expect(screen.getByText("greenhouse")).toBeInTheDocument();
     expect(screen.getByText("Acme")).toBeInTheDocument();
     expect(screen.queryByText("USAJOBS")).toBeNull();
+  });
+});
+
+describe("AutomationWizard - schedule step", () => {
+  const weeklyAutomation = {
+    ...usajobsAutomation,
+    scheduleFrequency: "weekly",
+    scheduleDayOfWeek: 3,
+  };
+
+  // basics -> search -> resume -> matching -> schedule
+  const toSchedule = async () => {
+    for (let i = 0; i < 4; i++) await next();
+  };
+  const daySelect = () =>
+    screen.queryByRole("combobox", { name: /day of the week/i });
+
+  it("defaults a new schedule to daily with no weekday picker", { timeout: 30000 }, async () => {
+    renderWizard();
+
+    expect(screen.getByRole("radio", { name: "Daily" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Weekly" })).not.toBeChecked();
+    expect(daySelect()).toBeNull();
+  });
+
+  it("shows a weekday picker defaulting to Monday when Weekly is chosen", { timeout: 30000 }, async () => {
+    renderWizard(usajobsAutomation);
+    await toSchedule();
+
+    await user.click(screen.getByRole("radio", { name: "Weekly" }));
+
+    expect(daySelect()).toHaveTextContent("Monday");
+    // The hour picker stays.
+    expect(screen.getByText("Weekly Run Time")).toBeInTheDocument();
+  });
+
+  it("saves a weekly schedule and shows it on the review step", { timeout: 30000 }, async () => {
+    renderWizard(usajobsAutomation);
+    await toSchedule();
+
+    await user.click(screen.getByRole("radio", { name: "Weekly" }));
+    await user.click(daySelect()!);
+    await user.click(await screen.findByRole("option", { name: "Friday" }));
+    await next();
+
+    expect(screen.getByText("Weekly on Friday at 09:00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /update automation/i }));
+    await waitFor(() => expect(updateAutomation).toHaveBeenCalledTimes(1));
+    const [, input] = updateAutomation.mock.calls[0];
+    expect(input).toMatchObject({
+      scheduleHour: 9,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 5,
+    });
+  });
+
+  it("loads a weekly automation's frequency and weekday into the edit form", { timeout: 30000 }, async () => {
+    renderWizard(weeklyAutomation);
+    await toSchedule();
+
+    expect(screen.getByRole("radio", { name: "Weekly" })).toBeChecked();
+    expect(daySelect()).toHaveTextContent("Wednesday");
+  });
+
+  it("switches a weekly automation back to daily and drops the weekday", { timeout: 30000 }, async () => {
+    renderWizard(weeklyAutomation);
+    await toSchedule();
+
+    await user.click(screen.getByRole("radio", { name: "Daily" }));
+    expect(daySelect()).toBeNull();
+    await next();
+    expect(screen.getByText("Daily at 09:00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /update automation/i }));
+    await waitFor(() => expect(updateAutomation).toHaveBeenCalledTimes(1));
+    const [, input] = updateAutomation.mock.calls[0];
+    expect(input.scheduleFrequency).toBe("daily");
+    expect(input.scheduleDayOfWeek).toBeNull();
+  });
+
+  it("re-saves an existing daily automation unchanged", { timeout: 30000 }, async () => {
+    renderWizard(usajobsAutomation);
+    await toSchedule();
+    expect(screen.getByRole("radio", { name: "Daily" })).toBeChecked();
+    await next();
+    expect(screen.getByText("Daily at 09:00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /update automation/i }));
+    await waitFor(() => expect(updateAutomation).toHaveBeenCalledTimes(1));
+    const [, input] = updateAutomation.mock.calls[0];
+    expect(input).toMatchObject({
+      scheduleHour: 9,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+  });
+});
+
+describe("AutomationList - schedule", () => {
+  const renderList = (automations: any[]) =>
+    render(
+      <AutomationList
+        automations={automations}
+        onEdit={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+  it("labels a daily automation", () => {
+    renderList([{ ...usajobsAutomation, scheduleFrequency: "daily" }]);
+    expect(screen.getByText("Daily at 09:00")).toBeInTheDocument();
+  });
+
+  it("labels an automation saved before frequencies existed as daily", () => {
+    renderList([usajobsAutomation]);
+    expect(screen.getByText("Daily at 09:00")).toBeInTheDocument();
+  });
+
+  it("labels a weekly automation with its weekday", () => {
+    renderList([
+      { ...usajobsAutomation, scheduleFrequency: "weekly", scheduleDayOfWeek: 1 },
+    ]);
+    expect(screen.getByText("Weekly on Monday at 09:00")).toBeInTheDocument();
   });
 });

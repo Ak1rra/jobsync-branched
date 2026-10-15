@@ -54,6 +54,8 @@ export function useWizardForm({
       resumeId: editAutomation?.resumeId ?? "",
       matchThreshold: editAutomation?.matchThreshold ?? 80,
       scheduleHour: editAutomation?.scheduleHour ?? 8,
+      scheduleFrequency: editAutomation?.scheduleFrequency ?? "daily",
+      scheduleDayOfWeek: editAutomation?.scheduleDayOfWeek ?? null,
     },
   });
 
@@ -68,6 +70,8 @@ export function useWizardForm({
         resumeId: editAutomation?.resumeId ?? "",
         matchThreshold: editAutomation?.matchThreshold ?? 80,
         scheduleHour: editAutomation?.scheduleHour ?? 8,
+        scheduleFrequency: editAutomation?.scheduleFrequency ?? "daily",
+        scheduleDayOfWeek: editAutomation?.scheduleDayOfWeek ?? null,
       });
       setStep(0);
     }

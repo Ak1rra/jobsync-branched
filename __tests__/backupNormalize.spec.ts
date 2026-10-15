@@ -154,3 +154,90 @@ describe("normalizeAutomation", () => {
     expect(row.nextRunAt).toBeNull();
   });
 });
+
+describe("normalizeAutomation - weekly", () => {
+  it("moves a weekly automation to its next chosen weekday", () => {
+    const row = normalizeAutomation({
+      status: "active",
+      scheduleHour: 9,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 3,
+      nextRunAt: new Date("2020-01-01T09:00:00"),
+    });
+    expect(row.scheduleFrequency).toBe("weekly");
+    expect(row.scheduleDayOfWeek).toBe(3);
+    expect(row.nextRunAt!.getDay()).toBe(3);
+    expect(row.nextRunAt!.getHours()).toBe(9);
+    expect(row.nextRunAt!.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("treats a backup row with no frequency as daily", () => {
+    const row = normalizeAutomation({
+      status: "active",
+      scheduleHour: 9,
+      nextRunAt: new Date("2020-01-01T09:00:00"),
+    });
+    expect(row.nextRunAt!.getTime() - Date.now()).toBeLessThanOrEqual(
+      25 * 3600 * 1000,
+    );
+  });
+});
+
+describe("normalizeAutomation - schedule consistency", () => {
+  const base = {
+    status: "active",
+    scheduleHour: 9,
+    nextRunAt: new Date("2020-01-01T09:00:00") as Date | null,
+  };
+
+  it.each([
+    ["missing", undefined],
+    ["null", null],
+    ["out of range", 9],
+    ["negative", -1],
+    ["fractional", 2.5],
+  ])("stores weekly with a %s day as daily with no day", (_label, day) => {
+    const row = normalizeAutomation({
+      ...base,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: day as number | null | undefined,
+    });
+    expect(row.scheduleFrequency).toBe("daily");
+    expect(row.scheduleDayOfWeek).toBeNull();
+    expect(row.nextRunAt!.getTime() - Date.now()).toBeLessThanOrEqual(
+      25 * 3600 * 1000,
+    );
+  });
+
+  it("clears a stray day on a daily row", () => {
+    const row = normalizeAutomation({
+      ...base,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: 4,
+    });
+    expect(row.scheduleFrequency).toBe("daily");
+    expect(row.scheduleDayOfWeek).toBeNull();
+  });
+
+  it("normalizes a paused row's schedule too", () => {
+    const row = normalizeAutomation({
+      ...base,
+      status: "paused",
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: null,
+    });
+    expect(row.scheduleFrequency).toBe("daily");
+    expect(row.nextRunAt).toBeNull();
+  });
+
+  it("keeps a valid weekly row, including Sunday", () => {
+    const row = normalizeAutomation({
+      ...base,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 0,
+    });
+    expect(row.scheduleFrequency).toBe("weekly");
+    expect(row.scheduleDayOfWeek).toBe(0);
+    expect(row.nextRunAt!.getDay()).toBe(0);
+  });
+});

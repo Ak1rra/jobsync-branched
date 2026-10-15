@@ -13,6 +13,8 @@ import {
   buildUsajobsUrl,
   fetchUsajobsJobs,
   resolveUsajobsCredentials,
+  searchLimitNotes,
+  searchPlan,
   searchUsajobsJobs,
   toUsajobsFilters,
   USAJOBS_NOT_CONFIGURED,
@@ -23,7 +25,7 @@ import type { UsajobsCredentials } from "@/lib/scraper/usajobs/types";
 const KEY = "SECRET-KEY-1234567890";
 const EMAIL = "jane.doe@example.com";
 const creds: UsajobsCredentials = { apiKey: KEY, userAgentEmail: EMAIL };
-const FILTERS = { keyword: "information technology" };
+const FILTERS = { keywords: ["information technology"] };
 const PAGE_SIZE = APP_CONSTANTS.USAJOBS_PAGE_SIZE;
 
 function res(
@@ -112,7 +114,7 @@ describe("header construction", () => {
 
 describe("param translation + URL encoding", () => {
   it("emits only the defaults for a bare keyword", () => {
-    expect(buildUsajobsUrl({ keyword: "nurse" }, 1)).toBe(
+    expect(buildUsajobsUrl({}, 1, PAGE_SIZE, undefined, "nurse")).toBe(
       `https://data.usajobs.gov/api/search?Keyword=nurse&Fields=Full&ResultsPerPage=${PAGE_SIZE}&Page=1`,
     );
   });
@@ -120,7 +122,7 @@ describe("param translation + URL encoding", () => {
   it("translates every filter to its documented parameter name and format", () => {
     const params = buildUsajobsParams(
       {
-        keyword: "software",
+        keywords: ["software", "Ignored: one keyword per request"],
         positionTitles: ["Electrical Engineer", "Ignored: one title per request"],
         locationName: ["Atlanta, Georgia", "Norfolk Virginia"],
         radius: 75,
@@ -144,6 +146,7 @@ describe("param translation + URL encoding", () => {
       3,
       100,
       "Electrical Engineer",
+      "software",
     );
     expect(params).toEqual([
       ["Keyword", "software"],
@@ -177,7 +180,7 @@ describe("param translation + URL encoding", () => {
       "False",
     ]);
     expect(
-      buildUsajobsParams({ keyword: "x" }, 1, 50).some(([k]) => k === "RemoteIndicator"),
+      buildUsajobsParams({}, 1, 50, undefined, "x").some(([k]) => k === "RemoteIndicator"),
     ).toBe(false);
   });
 
@@ -188,6 +191,14 @@ describe("param translation + URL encoding", () => {
       "PositionTitle",
       "Pharmacist",
     ]);
+  });
+
+  it("sends Keyword only for the keyword of the request (a list is never joined)", () => {
+    const f = { keywords: ["nurse", "pharmacist"] };
+    expect(buildUsajobsParams(f, 1, 50).some(([k]) => k === "Keyword")).toBe(false);
+    const withKeyword = buildUsajobsParams(f, 1, 50, undefined, "pharmacist");
+    expect(withKeyword).toContainEqual(["Keyword", "pharmacist"]);
+    expect(withKeyword.filter(([k]) => k === "Keyword")).toHaveLength(1);
   });
 
   it("percent-encodes spaces, separators and reserved characters", () => {
@@ -208,10 +219,10 @@ describe("param translation + URL encoding", () => {
   });
 });
 
-describe("toUsajobsFilters (shared titles/locations -> request filters)", () => {
-  it("derives positionTitles and locationName from targetTitles and locations", () => {
+describe("toUsajobsFilters (shared titles/keywords/locations -> request filters)", () => {
+  it("derives positionTitles, keywords and locationName from the shared lists", () => {
     const f = toUsajobsFilters({
-      keyword: "k",
+      keywords: ["k", "K", "j"],
       targetTitles: ["Nurse", "RN"],
       locations: ["Denver", "Reno"],
       radius: 25,
@@ -219,22 +230,24 @@ describe("toUsajobsFilters (shared titles/locations -> request filters)", () => 
       topK: 5,
     });
     expect(f).toMatchObject({
-      keyword: "k",
+      keywords: ["k", "j"],
       positionTitles: ["Nurse", "RN"],
       locationName: ["Denver", "Reno"],
       radius: 25,
     });
     expect(f).not.toHaveProperty("targetTitles");
     expect(f).not.toHaveProperty("locations");
+    expect(f).not.toHaveProperty("keyword");
   });
 
   it("omits empty lists and dedupes case-insensitively", () => {
     const f = toUsajobsFilters({
-      keyword: "k",
+      keywords: [],
       targetTitles: [],
       locations: ["Reno", "reno"],
     });
     expect(f).not.toHaveProperty("positionTitles");
+    expect(f).not.toHaveProperty("keywords");
     expect(f.locationName).toEqual(["Reno"]);
     expect(toUsajobsFilters({ targetTitles: ["A", "a", "B"] }).positionTitles).toEqual(["A", "B"]);
   });
@@ -245,6 +258,72 @@ describe("toUsajobsFilters (shared titles/locations -> request filters)", () => 
     expect(url).toContain("PositionTitle=Nurse");
     expect(url).toContain("LocationName=Denver%2C%20Colorado%3BReno");
     expect(url).toContain("Radius=10");
+  });
+});
+
+describe("per-request limits (the lists themselves are not capped)", () => {
+  const many = (p: string, n: number) => Array.from({ length: n }, (_, i) => `${p}${i}`);
+
+  it("searches the first 5 titles; with no titles the first 5 keywords; else one plain search", () => {
+    expect(searchPlan({ positionTitles: many("T", 7), keywords: many("K", 7) })).toEqual(
+      many("T", 5).map((title) => ({ title })),
+    );
+    expect(searchPlan({ keywords: many("K", 7) })).toEqual(
+      many("K", 5).map((keyword) => ({ keyword })),
+    );
+    expect(searchPlan({})).toEqual([{}]);
+  });
+
+  it("sends only the first 10 locations in LocationName", () => {
+    const params = buildUsajobsParams({ locationName: many("L", 13) }, 1, 50);
+    expect(params).toContainEqual(["LocationName", many("L", 10).join(";")]);
+  });
+
+  it("notes entries that are left out of the searches, and only those", () => {
+    expect(searchLimitNotes({ positionTitles: many("T", 5), locationName: many("L", 10) })).toEqual([]);
+    expect(searchLimitNotes({ positionTitles: many("T", 7), keywords: many("K", 9) })).toEqual([
+      "Searched USAJOBS for the first 5 of 7 titles; all 7 still rank results",
+    ]);
+    expect(searchLimitNotes({ keywords: many("K", 8) })).toEqual([
+      "Searched USAJOBS for the first 5 of 8 keywords; all 8 still rank results",
+    ]);
+    expect(searchLimitNotes({ locationName: many("L", 12) })).toEqual([
+      "Searched USAJOBS in the first 10 of 12 locations; all 12 still apply to your location filter",
+    ]);
+  });
+
+  it("toUsajobsFilters keeps every entry; the limit is applied when searching", () => {
+    const f = toUsajobsFilters({
+      targetTitles: many("T", 7),
+      keywords: many("K", 7),
+      locations: many("L", 12),
+    });
+    expect(f.positionTitles).toHaveLength(7);
+    expect(f.keywords).toHaveLength(7);
+    expect(f.locationName).toHaveLength(12);
+  });
+
+  it("searchUsajobsJobs runs 5 title searches for 7 titles and reports a note, not an error", async () => {
+    mockResolveApiKey.mockImplementation(async (_u: unknown, provider: string) =>
+      provider === "usajobs" ? KEY : EMAIL,
+    );
+    const body = { SearchResult: { SearchResultItems: [], UserArea: { NumberOfPages: 1 } } };
+    const spy = stubFetch(...Array.from({ length: 5 }, () => res(body)));
+    const prev = APP_CONSTANTS.USAJOBS_PAGE_DELAY_MS;
+    (APP_CONSTANTS as any).USAJOBS_PAGE_DELAY_MS = 0;
+    try {
+      const out = await searchUsajobsJobs({
+        userId: "u1",
+        config: { targetTitles: many("T", 7), keywords: ["k"] },
+      });
+      expect(spy).toHaveBeenCalledTimes(5);
+      expect(out.errors).toEqual([]);
+      expect(out.notes).toEqual([
+        "Searched USAJOBS for the first 5 of 7 titles; all 7 still rank results",
+      ]);
+    } finally {
+      (APP_CONSTANTS as any).USAJOBS_PAGE_DELAY_MS = prev;
+    }
   });
 });
 
@@ -314,6 +393,34 @@ describe("multiple position titles (one search per title)", () => {
     await fetchUsajobsJobs(creds, FILTERS, seams());
     expect(spy).toHaveBeenCalledTimes(1);
     expect(titleOf(spy.mock.calls[0])).toBeNull();
+  });
+
+  const keywordOf = (call: unknown[]) =>
+    new URL(call[0] as string).searchParams.get("Keyword");
+
+  it("with keywords and no titles runs one Keyword search per keyword and merges them", async () => {
+    const spy = stubFetch(res(result(["1", "2"])), res(result(["2", "3"])));
+    const out = await fetchUsajobsJobs(
+      creds,
+      { keywords: ["nurse", "clinical informatics"] },
+      seams(),
+    );
+    expect(spy.mock.calls.map(keywordOf)).toEqual(["nurse", "clinical informatics"]);
+    expect(spy.mock.calls.map(titleOf)).toEqual([null, null]);
+    expect(out.jobs.map((j) => j.title)).toEqual(["Job 1", "Job 2", "Job 3"]);
+    expect(out.totalAvailable).toBeUndefined();
+  });
+
+  it("with titles AND keywords searches by title only (no title x keyword product)", async () => {
+    const spy = stubFetch(res(result(["1"])), res(result(["2"])));
+    await fetchUsajobsJobs(
+      creds,
+      { positionTitles: ["Nurse", "RN"], keywords: ["a", "b", "c"] },
+      seams(),
+    );
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls.map(titleOf)).toEqual(["Nurse", "RN"]);
+    expect(spy.mock.calls.map(keywordOf)).toEqual([null, null]);
   });
 
   it("paginates each title and shares the page ceiling across them", async () => {

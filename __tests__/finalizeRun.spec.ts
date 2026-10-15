@@ -56,3 +56,49 @@ it("does not return boardErrors in the RunnerResult", async () => {
   const result = await finalizeRun("run-1", data);
   expect(result).not.toHaveProperty("boardErrors");
 });
+
+describe("next run after a run", () => {
+  const nextRunAt = () => db.automation.update.mock.calls[0][0].data.nextRunAt;
+
+  it("schedules the next day for a daily automation", async () => {
+    db.automation.findUnique.mockResolvedValue({
+      scheduleHour: 8,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+    await finalizeRun("run-1", data);
+    const ms = nextRunAt().getTime() - Date.now();
+    expect(nextRunAt().getHours()).toBe(8);
+    expect(ms).toBeGreaterThan(0);
+    expect(ms).toBeLessThanOrEqual(25 * 3600 * 1000);
+  });
+
+  it("schedules the next chosen weekday for a weekly automation", async () => {
+    db.automation.findUnique.mockResolvedValue({
+      scheduleHour: 8,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 2,
+    });
+    await finalizeRun("run-1", data);
+    expect(nextRunAt().getDay()).toBe(2);
+    expect(nextRunAt().getHours()).toBe(8);
+    expect(nextRunAt().getTime()).toBeGreaterThan(Date.now());
+    expect(nextRunAt().getTime() - Date.now()).toBeLessThanOrEqual(
+      7 * 24 * 3600 * 1000 + 3600 * 1000,
+    );
+  });
+
+  it("treats a row without frequency fields as daily", async () => {
+    db.automation.findUnique.mockResolvedValue({ scheduleHour: 8 });
+    await finalizeRun("run-1", data);
+    expect(nextRunAt().getTime() - Date.now()).toBeLessThanOrEqual(
+      25 * 3600 * 1000,
+    );
+  });
+
+  it("keeps a midnight schedule at hour 0", async () => {
+    db.automation.findUnique.mockResolvedValue({ scheduleHour: 0 });
+    await finalizeRun("run-1", data);
+    expect(nextRunAt().getHours()).toBe(0);
+  });
+});

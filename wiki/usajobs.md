@@ -32,23 +32,27 @@ There is no **Verify** step for USAJOBS, unlike the AI providers: it has no way 
 
 In the wizard, choose **USAJOBS (US federal jobs)** as the job board. The **Search** step then shows a search form instead of the company picker:
 
-- **Keyword**, **Position titles** (up to 5), **Locations** (up to 10) with an optional **Radius** (a radius needs a location) and the **Only show jobs in these locations** switch, **Agency codes**, and **Occupational series codes** (four digits, such as `2210`). Type a title or location and press Enter to add it; add as many as you like up to the limit.
+- **Keywords / skills**, **Position titles** and **Locations** with an optional **Radius** (a radius needs a location) and the **Only show jobs in these locations** switch, **Agency codes**, and **Occupational series codes** (four digits, such as `2210`). Type an entry and press Enter to add it as a chip (keywords also accept a comma). Add as many as you like; all rank results, but only the first few are sent to USAJOBS (see below).
 - Under **More filters**: minimum and maximum annual salary, pay grade low and high, hiring path, who may apply, remote only or exclude remote, schedule, appointment type codes, security clearance, posted within a number of days, and sort field and direction.
-- The shared *Keywords / skills*, *Jobs analyzed per run* and *Save additional relevant listings*.
+- The shared *Jobs analyzed per run* and *Save additional relevant listings*.
 
-Position titles and locations appear **once**: the same list is both what USAJOBS is asked to search for and what the ranking step scores against, so there is no separate "target titles" or "ranking locations" field to keep in sync. At least one of keyword, position title, location, agency code or series code is required, because a search with none would pull an arbitrary slice of every open federal job. **Next** stays disabled until you add one, and the wizard lists anything else that cannot be saved, such as a minimum salary above the maximum. Entries are checked against the same rules the server applies when you save. Because the locations also drive the strict-location switch, turning it on together with a radius drops nearby jobs whose location text matches none of your locations; leave it off if you rely on the radius.
+Keywords, position titles and locations appear **once** each: the same list is both what USAJOBS is asked to search for and what the ranking step scores against, so there is no separate field to keep in sync. At least one of keyword, position title, location, agency code or series code is required, because a search with none would pull an arbitrary slice of every open federal job. **Next** stays disabled until you add one, and the wizard lists anything else that cannot be saved, such as a minimum salary above the maximum. Because the locations also drive the strict-location switch, turning it on together with a radius drops nearby jobs whose location text matches none of your locations; leave it off if you rely on the radius.
 
 **Edit** reopens the wizard with the saved search filled in, and the automation's page shows the saved filters under **Show more**.
 
 ## Which filters run at USAJOBS and which run in JobSync?
 
-**Sent to USAJOBS (server-side):** keyword, position titles, locations and radius, agency codes, series codes, minimum and maximum salary, pay grade low and high, hiring path, who may apply, remote, schedule, appointment type, security clearance, date posted, and sort field and direction. Multi-value filters travel semicolon-separated, so a location (or other multi-value entry) containing `;` is rejected when you save. The locations are sent together as one `LocationName` value. USAJOBS documents `PositionTitle` as a single value with no multi-value separator, so each position title is its own search: JobSync runs them one after another within the same time limit, page and job ceilings and retry rules, and merges the results, counting an announcement that several titles return once.
+**Sent to USAJOBS (server-side):** keywords (see below), position titles, locations and radius, agency codes, series codes, minimum and maximum salary, pay grade low and high, hiring path, who may apply, remote, schedule, appointment type, security clearance, date posted, and sort field and direction. Multi-value filters travel semicolon-separated, so a location (or other multi-value entry) containing `;` is rejected when you save. The first 10 locations are sent together as one `LocationName` value (USAJOBS documents no limit; 10 keeps the address short). USAJOBS documents `PositionTitle` as a single value with no multi-value separator, so each of your first 5 position titles is its own search: JobSync runs them one after another within the same time limit, page and job ceilings and retry rules, and merges the results, counting an announcement that several titles return once.
+
+Keywords are searched one by one only when you have **no position title**. USAJOBS documents `Keyword` as matching "all of the words specified (or synonyms of the word)" and no way to pass several values, so joining keywords into one value would require all of them to match. With no title, JobSync searches each of your first 5 keywords separately and merges the results. With a title, the titles drive the searches and the keywords only rank results, because combining them would multiply the requests.
+
+Entries beyond the limits (5 titles, 5 keywords when there is no title, 10 locations) are kept, still rank results and still feed the strict-location switch, but are not sent to USAJOBS. The run log then shows a note such as *Searched USAJOBS for the first 5 of 7 titles; all 7 still rank results*; the run still finishes as **completed**. Put the entries you most want searched first.
 
 **Applied by JobSync after the fetch (client-side):**
 
 - An announcement whose closing date has already passed is dropped.
 - The salary filter is re-checked against the announcement's actual annual range, because USAJOBS matches salary by coarse bucket. Announcements with no annual figure, such as hourly pay, are kept rather than dropped.
-- Position titles, keywords, locations and the strict-location switch also run in the shared ranking step.
+- Keywords, position titles, locations and the strict-location switch also run in the shared ranking step.
 
 *Who may apply* set to *Status* or *All* additionally requires specific authorization from OPM.
 
@@ -56,7 +60,7 @@ Position titles and locations appear **once**: the same list is both what USAJOB
 
 Results are fetched **50 per page**, one page at a time with a short pause between pages, up to **10 pages or 500 jobs** per run. The whole search, including retries, must finish within 60 seconds. Reaching the page or job ceiling is not an error: the run still finishes as **completed** with what it fetched, and the run log shows a warning such as *Result ceiling reached: fetched 500 of 1,234 matching announcements - narrow your filters to see the rest*. Narrow the search if you see it regularly.
 
-The ceilings and the 60-second limit cover all of a run's title searches together, so with several titles a broad first title can use them up before the later ones run (the warning above appears then). If the search, or any one of the title searches, fails, the jobs already fetched are kept and the run finishes as **completed with errors**, with a note saying how many jobs and pages were kept; the remaining titles are still searched unless the failure was a rejected key, a timeout or a rate limit. With no jobs at all it is **failed**.
+The ceilings and the 60-second limit cover all of a run's searches together (one per title, or per keyword when there are no titles), so with several titles a broad first title can use them up before the later ones run (the warning above appears then). If the search, or any one of the title searches, fails, the jobs already fetched are kept and the run finishes as **completed with errors**, with a note saying how many jobs and pages were kept; the remaining titles are still searched unless the failure was a rejected key, a timeout or a rate limit. With no jobs at all it is **failed**.
 
 **Rate limits and retries:**
 
@@ -72,9 +76,9 @@ A job is identified by its announcement URL, compared in the same normalized for
 
 A discovered USAJOBS job gets the announcement's closing date (`ApplicationCloseDate`) as its due date, instead of the usual three days from discovery. If USAJOBS gives no parseable closing date, the three-day default applies.
 
-## What happened to automations saved before titles and locations were merged?
+## What happened to automations saved before keywords, titles and locations were merged?
 
-Earlier versions had a separate server-side *Position title* and *Search locations*, next to the ranking *Target job titles* and *Locations*. Saved automations from then keep working: when one is run or opened, its old position title is added to the titles list and its old search locations to the locations list (duplicates ignored, ignoring case), and **Edit** shows them in the single field. Note that every title in the list is now also a search, so an automation that used to have several ranking-only target titles now makes one request per title (up to 5). If a saved list is over the limit of 5 titles or 10 locations, the old search values are kept and the extra entries are dropped. Nothing is rewritten until you save the automation.
+Earlier versions had a separate server-side *Keyword*, *Position title* and *Search locations*, next to the ranking *Keywords / skills*, *Target job titles* and *Locations*. Saved automations from then keep working: when one is run or opened, its old keyword, position title and search locations are added, **first**, to the keywords, titles and locations lists (duplicates ignored, ignoring case), and **Edit** shows them in the single field. They go first because only the first few entries are sent to USAJOBS. Every one of your first 5 titles is now also a search, so an automation that had several ranking-only target titles makes one request per title. An automation that had both a keyword and a position title used to send both; it now searches by title only and uses the keyword for ranking, so it may fetch a broader set. Nothing is dropped from a saved list, and nothing is rewritten until you save the automation.
 
 ## What are the known limitations of the USAJOBS board?
 

@@ -43,24 +43,138 @@ describe("mapUsajobsItem (full announcement)", () => {
     expect(job.isRemote).toBe(false);
   });
 
-  it("builds a factual description header plus body sections", () => {
+  it("builds an HTML description: bold-label fact list, then headed sections", () => {
     const d = job.description;
-    expect(d).toContain("Announcement number: DE-12345678-26-ABC");
-    expect(d).toContain("Control number: 812345600");
-    expect(d).toContain("Agency: Office of the Chief Information Officer");
-    expect(d).toContain("Department: Department of Veterans Affairs");
-    expect(d).toContain("Grade: GS 11-12");
-    expect(d).toContain("Series: 2210 Information Technology Management");
-    expect(d).toContain("Schedule: Full-time");
-    expect(d).toContain("Appointment type: Permanent");
-    expect(d).toContain("Hiring path: public, vet");
-    expect(d).toContain("Security clearance: Secret");
-    expect(d).toContain("Telework eligible: Yes");
-    expect(d).toContain("Closes: 2099-12-31");
-    expect(d).toContain("Apply: https://www.usajobs.gov:443/job/812345600/apply");
-    expect(d).toContain("Summary\nDevelops and maintains application software.");
-    expect(d).toContain("Major duties\nDesigns and tests software.\nDocuments system changes.");
-    expect(d).toContain("Qualifications\nYou must have one year");
+    expect(d.startsWith("<ul><li><strong>Announcement number:</strong> DE-12345678-26-ABC</li>")).toBe(true);
+    expect(d).toContain("<li><strong>Control number:</strong> 812345600</li>");
+    expect(d).toContain("<li><strong>Agency:</strong> Office of the Chief Information Officer</li>");
+    expect(d).toContain("<li><strong>Department:</strong> Department of Veterans Affairs</li>");
+    expect(d).toContain("<li><strong>Grade:</strong> GS 11-12</li>");
+    expect(d).toContain("<li><strong>Series:</strong> 2210 Information Technology Management</li>");
+    expect(d).toContain("<li><strong>Schedule:</strong> Full-time</li>");
+    expect(d).toContain("<li><strong>Appointment type:</strong> Permanent</li>");
+    expect(d).toContain("<li><strong>Security clearance:</strong> Secret</li>");
+    expect(d).toContain("<li><strong>Telework eligible:</strong> Yes</li>");
+    expect(d).toContain("<h3>Summary</h3><p>Develops and maintains application software.</p>");
+    expect(d).toContain(
+      "<h3>Major duties</h3><ul><li>Designs and tests software.</li><li>Documents system changes.</li></ul>",
+    );
+    expect(d).toContain("<h3>Qualifications</h3><p>You must have one year");
+    // facts come first, then the sections in order
+    expect(d.indexOf("<h3>Summary")).toBeGreaterThan(d.indexOf("Telework eligible"));
+    expect(d.indexOf("<h3>Major duties")).toBeGreaterThan(d.indexOf("<h3>Summary"));
+    expect(d.indexOf("<h3>Qualifications")).toBeGreaterThan(d.indexOf("<h3>Major duties"));
+  });
+
+  it("shows hiring-path codes as labels", () => {
+    expect(job.description).toContain(
+      "<li><strong>Hiring path:</strong> Open to the public, Veterans</li>",
+    );
+  });
+
+  it("formats the close date with the app's date convention (PP)", () => {
+    expect(job.description).toContain("<li><strong>Closes:</strong> Dec 31, 2099</li>");
+    expect(job.description).not.toContain("2099-12-31");
+  });
+
+  it("strips the default port from the displayed apply link only", () => {
+    expect(job.description).toContain(
+      '<li><strong>Apply:</strong> <a href="https://www.usajobs.gov/job/812345600/apply">https://www.usajobs.gov/job/812345600/apply</a></li>',
+    );
+    expect(job.description).not.toContain(":443");
+  });
+
+  it("leaves the stored url (the dedupe key) untouched, port included", () => {
+    expect(job.url).toBe("https://www.usajobs.gov:443/job/812345600");
+  });
+});
+
+describe("description structure and cleaning", () => {
+  const wrap = (details: object, descriptor: object = {}) =>
+    mapUsajobsItem({
+      MatchedObjectDescriptor: {
+        PositionTitle: "T",
+        OrganizationName: "O",
+        PositionURI: "https://example.gov:443/job/1",
+        ...descriptor,
+        UserArea: { Details: details },
+      },
+    })!;
+
+  it("escapes hostile text in facts, headings content and links", () => {
+    const job = wrap(
+      {
+        SecurityClearance: '<script>alert(1)</script> "x" & y',
+        JobSummary: "<script>alert(2)</script>safe <b>bold</b>",
+        MajorDuties: ["<img src=x onerror=alert(3)>", "a < b & c"],
+      },
+      {
+        PositionID: "<b>id</b>",
+        ApplyURI: ['https://example.gov/a?x="><script>alert(4)</script>'],
+      },
+    );
+    const d = job.description;
+    expect(d).not.toMatch(/<script|<img|<b>/i);
+    expect(d).not.toContain('"><');
+    expect(d).toContain("&lt;script&gt;alert(1)&lt;/script&gt; &quot;x&quot; &amp; y");
+    expect(d).toContain("&lt;b&gt;id&lt;/b&gt;");
+    expect(d).toContain("<li>a &lt; b &amp; c</li>");
+  });
+
+  it("renders a multi-line text field as one paragraph per line, not a list", () => {
+    const d = wrap({ JobSummary: "First para.\r\n\r\nSecond   para." }).description;
+    expect(d).toContain("<h3>Summary</h3><p>First para.</p><p>Second para.</p>");
+  });
+
+  it("renders a single-element MajorDuties array as a paragraph", () => {
+    expect(wrap({ MajorDuties: ["Only duty."] }).description).toContain(
+      "<h3>Major duties</h3><p>Only duty.</p>",
+    );
+  });
+
+  it("falls back to the raw code for an unknown or prototype-ish hiring path", () => {
+    const d = wrap({ HiringPath: ["public", "brand-new", "constructor", "public"] }).description;
+    expect(d).toContain("<strong>Hiring path:</strong> Open to the public, brand-new, constructor</li>");
+  });
+
+  it("accepts a single-string hiring path", () => {
+    expect(wrap({ HiringPath: "vet" }).description).toContain(
+      "<strong>Hiring path:</strong> Veterans</li>",
+    );
+  });
+
+  it("collapses odd whitespace in fact values", () => {
+    expect(wrap({ SecurityClearance: "  Top \n\t Secret  " }).description).toContain(
+      "<strong>Security clearance:</strong> Top Secret</li>",
+    );
+  });
+
+  it("drops Department/Sub-agency when they repeat the agency", () => {
+    const d = wrap(
+      { SubAgencyName: "office of x" },
+      { OrganizationName: "Office of X", DepartmentName: " OFFICE OF X " },
+    ).description;
+    expect(d).toContain("<strong>Agency:</strong> Office of X</li>");
+    expect(d).not.toContain("Department:");
+    expect(d).not.toContain("Sub-agency:");
+  });
+
+  it("omits an unparseable or non-http apply link rather than showing it", () => {
+    expect(wrap({}, { ApplyURI: ["javascript:alert(1)"] }).description).not.toContain("Apply:");
+    expect(wrap({}, { ApplyURI: ["not a url"] }).description).not.toContain("Apply:");
+  });
+
+  it("omits empty facts and sections entirely (no empty list or heading)", () => {
+    const job = mapUsajobsItem({
+      MatchedObjectDescriptor: {
+        PositionTitle: "T",
+        OrganizationName: "",
+        DepartmentName: "D",
+        PositionURI: "https://example.gov/job/2",
+        QualificationSummary: "   ",
+      },
+    })!;
+    expect(job.description).toBe("<ul><li><strong>Department:</strong> D</li></ul>");
   });
 });
 
@@ -82,7 +196,7 @@ describe("mapUsajobsItem (sparse / unusual announcements)", () => {
     expect(job.isRemote).toBeUndefined();
     expect(job.employmentType).toBeUndefined();
     expect(job.description).not.toMatch(/Grade:|Series:|Closes:|Apply:|Summary/);
-    expect(job.description).toContain("Agency: Department of Energy");
+    expect(job.description).toContain("<strong>Agency:</strong> Department of Energy</li>");
   });
 
   it("falls back to de-duplicated PositionLocation names", () => {
@@ -151,7 +265,7 @@ describe("mapUsajobsItem (sparse / unusual announcements)", () => {
     expect(job.postedDate).toBeUndefined();
     expect(job.dueDate).toBeUndefined();
     expect(job.isRemote).toBeUndefined();
-    expect(job.description).toContain("Control number: 7");
+    expect(job.description).toContain("<strong>Control number:</strong> 7</li>");
   });
 
   it("keeps paragraph breaks and strips HTML in text fields", () => {
@@ -163,7 +277,9 @@ describe("mapUsajobsItem (sparse / unusual announcements)", () => {
         QualificationSummary: "<p>One &amp; two</p><p>Three</p>",
       },
     })!;
-    expect(job.description).toContain("Qualifications\nOne & two\nThree");
+    expect(job.description).toContain(
+      "<h3>Qualifications</h3><p>One &amp; two</p><p>Three</p>",
+    );
   });
 });
 

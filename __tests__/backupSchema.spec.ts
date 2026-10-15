@@ -179,3 +179,43 @@ describe("stage groups", () => {
     expect(parsed.JobStage[0].isCurrent).toBe(true);
   });
 });
+
+describe("automation schedule columns", () => {
+  const row = {
+    id: "a1",
+    name: "Nightly",
+    jobBoard: "greenhouse",
+    keywords: "",
+    location: "",
+    sourceConfig: null,
+    resumeId: "r1",
+    matchThreshold: 80,
+    scheduleHour: 9,
+    nextRunAt: null,
+    lastRunAt: null,
+    status: "active",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("accepts a backup taken before weekly schedules and leaves the fields unset", () => {
+    const parsed = BackupDataSchema.parse({ Automation: [row] });
+    expect(parsed.Automation[0].scheduleFrequency).toBeUndefined();
+    expect(parsed.Automation[0].scheduleDayOfWeek).toBeUndefined();
+  });
+
+  it("carries a weekly schedule through the parse", () => {
+    const parsed = BackupDataSchema.parse({
+      Automation: [{ ...row, scheduleFrequency: "weekly", scheduleDayOfWeek: 4 }],
+    });
+    expect(parsed.Automation[0].scheduleFrequency).toBe("weekly");
+    expect(parsed.Automation[0].scheduleDayOfWeek).toBe(4);
+  });
+
+  it("rejects an unknown frequency", () => {
+    const res = BackupDataSchema.safeParse({
+      Automation: [{ ...row, scheduleFrequency: "monthly" }],
+    });
+    expect(res.success).toBe(false);
+  });
+});

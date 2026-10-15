@@ -73,12 +73,13 @@ export function UsajobsSearchStep({ value, onChange }: UsajobsSearchStepProps) {
         </ul>
       )}
 
-      {/* Position titles and locations (and the strict toggle) live in the search
-          fields above: they are the same lists, so they are not repeated. */}
+      {/* Keywords, position titles and locations (and the strict toggle) live
+          in the search fields above: they are the same lists, so they are not
+          repeated. */}
       <TargetingFields
         value={value}
         onChange={update}
-        hide={{ titles: true, locations: true }}
+        hide={{ titles: true, keywords: true, locations: true }}
       />
       <RunOptionsFields value={value} onChange={update} />
     </div>

@@ -184,6 +184,10 @@ const Automation = z.object({
   resumeId: id,
   matchThreshold: int,
   scheduleHour: int,
+  // Optional: a backup taken before weekly schedules has neither key, and
+  // undefined leaves Prisma on the daily default.
+  scheduleFrequency: z.enum(["daily", "weekly"]).optional(),
+  scheduleDayOfWeek: optInt.optional(),
   nextRunAt: optDt,
   lastRunAt: optDt,
   status: str,

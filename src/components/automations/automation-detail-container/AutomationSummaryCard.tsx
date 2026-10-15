@@ -6,6 +6,7 @@ import { AlertTriangle, Clock, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { AutomationWithResume } from "@/models/automation.model";
+import { formatSchedule } from "@/lib/scraper/schedule";
 import { boardName } from "../ats-search-step/types";
 import { AutomationSearchConfig } from "./AutomationSearchConfig";
 
@@ -60,7 +61,7 @@ export function AutomationSummaryCard({
             <p className="text-sm text-muted-foreground">Schedule</p>
             <p className="font-medium flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              {automation.scheduleHour.toString().padStart(2, "0")}:00 daily
+              {formatSchedule(automation)}
             </p>
           </div>
           <div>

@@ -139,3 +139,317 @@ describe("updateAutomation schedule-hour uniqueness", () => {
     expect(prisma.automation.update).toHaveBeenCalled();
   });
 });
+
+describe("weekly schedules", () => {
+  const mockUser = { id: "user-1" };
+  const AUTO_ID = "auto-1";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getCurrentUser as any).mockResolvedValue(mockUser);
+    (prisma.automation.count as any).mockResolvedValue(1);
+    (prisma.resume.findFirst as any).mockResolvedValue({ id: RESUME_ID });
+    (prisma.automation.create as any).mockResolvedValue({ id: AUTO_ID });
+    (prisma.automation.update as any).mockResolvedValue({ id: AUTO_ID });
+  });
+
+  it("stores a daily schedule with no day when frequency is omitted", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue(null);
+
+    await createAutomation(baseInput());
+
+    const data = (prisma.automation.create as any).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      scheduleHour: 8,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+    expect(data.nextRunAt.getHours()).toBe(8);
+  });
+
+  it("stores a weekly schedule and computes nextRunAt on that weekday", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue(null);
+
+    const result = await createAutomation(
+      baseInput({ scheduleFrequency: "weekly", scheduleDayOfWeek: 2 }),
+    );
+
+    expect(result.success).toBe(true);
+    const data = (prisma.automation.create as any).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 2,
+    });
+    expect(data.nextRunAt.getDay()).toBe(2);
+    expect(data.nextRunAt.getHours()).toBe(8);
+    expect(data.nextRunAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("drops a stray day when the create is daily", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue(null);
+
+    await createAutomation(
+      baseInput({ scheduleFrequency: "daily", scheduleDayOfWeek: 4 }),
+    );
+
+    const data = (prisma.automation.create as any).mock.calls[0][0].data;
+    expect(data.scheduleDayOfWeek).toBeNull();
+  });
+
+  it("rejects a weekly create with no day", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue(null);
+
+    const result = await createAutomation(
+      baseInput({ scheduleFrequency: "weekly" }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(prisma.automation.create).not.toHaveBeenCalled();
+  });
+
+  it("recomputes nextRunAt when an edit switches daily to weekly", async () => {
+    (prisma.automation.findFirst as any)
+      .mockResolvedValueOnce({
+        id: AUTO_ID,
+        scheduleHour: 8,
+        scheduleFrequency: "daily",
+        scheduleDayOfWeek: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    await updateAutomation(
+      AUTO_ID,
+      baseInput({ scheduleFrequency: "weekly", scheduleDayOfWeek: 5 }),
+    );
+
+    const data = (prisma.automation.update as any).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 5,
+    });
+    expect(data.nextRunAt.getDay()).toBe(5);
+  });
+
+  it("clears the day and recomputes when an edit switches weekly to daily", async () => {
+    (prisma.automation.findFirst as any)
+      .mockResolvedValueOnce({
+        id: AUTO_ID,
+        scheduleHour: 8,
+        scheduleFrequency: "weekly",
+        scheduleDayOfWeek: 5,
+      })
+      .mockResolvedValueOnce(null);
+
+    await updateAutomation(
+      AUTO_ID,
+      baseInput({ scheduleFrequency: "daily", scheduleDayOfWeek: null }),
+    );
+
+    const data = (prisma.automation.update as any).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+    const msUntil = data.nextRunAt.getTime() - Date.now();
+    expect(msUntil).toBeGreaterThan(0);
+    expect(msUntil).toBeLessThanOrEqual(25 * 3600 * 1000);
+  });
+
+  it("recomputes from the stored schedule when only the day changes", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValueOnce({
+      id: AUTO_ID,
+      scheduleHour: 11,
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 1,
+    });
+
+    await updateAutomation(AUTO_ID, { scheduleDayOfWeek: 4 } as any);
+
+    const data = (prisma.automation.update as any).mock.calls[0][0].data;
+    expect(data.nextRunAt.getDay()).toBe(4);
+    expect(data.nextRunAt.getHours()).toBe(11);
+  });
+
+  it("refuses to make a daily automation weekly without a day", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValueOnce({
+      id: AUTO_ID,
+      scheduleHour: 8,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+
+    const result = await updateAutomation(AUTO_ID, {
+      scheduleFrequency: "weekly",
+    } as any);
+
+    expect(result.success).toBe(false);
+    expect(prisma.automation.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves nextRunAt alone when no schedule field changes", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValueOnce({
+      id: AUTO_ID,
+      scheduleHour: 8,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+
+    await updateAutomation(AUTO_ID, { name: "Renamed" } as any);
+
+    const data = (prisma.automation.update as any).mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("nextRunAt");
+    expect(data).not.toHaveProperty("scheduleFrequency");
+  });
+});
+
+describe("frequency-aware schedule clash", () => {
+  const mockUser = { id: "user-1" };
+  const AUTO_ID = "auto-1";
+  const clashWhere = (call: number) =>
+    (prisma.automation.findFirst as any).mock.calls[call][0].where;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (getCurrentUser as any).mockResolvedValue(mockUser);
+    (prisma.automation.count as any).mockResolvedValue(1);
+    (prisma.resume.findFirst as any).mockResolvedValue({ id: RESUME_ID });
+    (prisma.automation.create as any).mockResolvedValue({ id: AUTO_ID });
+    (prisma.automation.update as any).mockResolvedValue({ id: AUTO_ID });
+  });
+
+  it("a daily create clashes with any automation in that hour", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue(null);
+
+    await createAutomation(baseInput());
+
+    expect(clashWhere(0)).toEqual({ userId: "user-1", scheduleHour: 8 });
+  });
+
+  it("a weekly create clashes only with daily rows or the same weekday", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue(null);
+
+    await createAutomation(
+      baseInput({ scheduleFrequency: "weekly", scheduleDayOfWeek: 1 }),
+    );
+
+    expect(clashWhere(0)).toEqual({
+      userId: "user-1",
+      scheduleHour: 8,
+      OR: [
+        { scheduleFrequency: "daily" },
+        { scheduleFrequency: "weekly", scheduleDayOfWeek: 1 },
+      ],
+    });
+  });
+
+  it("rejects a weekly create when a clashing row is found", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValue({ id: "other" });
+
+    const result = await createAutomation(
+      baseInput({ scheduleFrequency: "weekly", scheduleDayOfWeek: 1 }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/08:00/);
+    expect(prisma.automation.create).not.toHaveBeenCalled();
+  });
+
+  it("an edit that only changes the frequency checks the stored hour and day", async () => {
+    (prisma.automation.findFirst as any)
+      .mockResolvedValueOnce({
+        id: AUTO_ID,
+        scheduleHour: 14,
+        scheduleFrequency: "daily",
+        scheduleDayOfWeek: null,
+      })
+      .mockResolvedValueOnce(null);
+
+    await updateAutomation(AUTO_ID, {
+      scheduleFrequency: "weekly",
+      scheduleDayOfWeek: 2,
+    } as any);
+
+    expect(clashWhere(1)).toEqual({
+      userId: "user-1",
+      scheduleHour: 14,
+      OR: [
+        { scheduleFrequency: "daily" },
+        { scheduleFrequency: "weekly", scheduleDayOfWeek: 2 },
+      ],
+      id: { not: AUTO_ID },
+    });
+  });
+
+  it("an edit that only changes the day checks the stored hour and frequency", async () => {
+    (prisma.automation.findFirst as any)
+      .mockResolvedValueOnce({
+        id: AUTO_ID,
+        scheduleHour: 11,
+        scheduleFrequency: "weekly",
+        scheduleDayOfWeek: 1,
+      })
+      .mockResolvedValueOnce(null);
+
+    await updateAutomation(AUTO_ID, { scheduleDayOfWeek: 4 } as any);
+
+    expect(clashWhere(1)).toMatchObject({
+      scheduleHour: 11,
+      OR: [
+        { scheduleFrequency: "daily" },
+        { scheduleFrequency: "weekly", scheduleDayOfWeek: 4 },
+      ],
+      id: { not: AUTO_ID },
+    });
+  });
+
+  it("rejects an edit that moves a weekly row onto a clashing day", async () => {
+    (prisma.automation.findFirst as any)
+      .mockResolvedValueOnce({
+        id: AUTO_ID,
+        scheduleHour: 11,
+        scheduleFrequency: "weekly",
+        scheduleDayOfWeek: 1,
+      })
+      .mockResolvedValueOnce({ id: "sibling" });
+
+    const result = await updateAutomation(AUTO_ID, {
+      scheduleDayOfWeek: 4,
+    } as any);
+
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/11:00/);
+    expect(prisma.automation.update).not.toHaveBeenCalled();
+  });
+
+  it("an edit to daily drops the weekday filter", async () => {
+    (prisma.automation.findFirst as any)
+      .mockResolvedValueOnce({
+        id: AUTO_ID,
+        scheduleHour: 11,
+        scheduleFrequency: "weekly",
+        scheduleDayOfWeek: 1,
+      })
+      .mockResolvedValueOnce(null);
+
+    await updateAutomation(AUTO_ID, { scheduleFrequency: "daily" } as any);
+
+    expect(clashWhere(1)).toEqual({
+      userId: "user-1",
+      scheduleHour: 11,
+      id: { not: AUTO_ID },
+    });
+  });
+
+  it("skips the clash query when no schedule field changes", async () => {
+    (prisma.automation.findFirst as any).mockResolvedValueOnce({
+      id: AUTO_ID,
+      scheduleHour: 8,
+      scheduleFrequency: "daily",
+      scheduleDayOfWeek: null,
+    });
+
+    await updateAutomation(AUTO_ID, { name: "Renamed" } as any);
+
+    expect(prisma.automation.findFirst).toHaveBeenCalledTimes(1);
+  });
+});

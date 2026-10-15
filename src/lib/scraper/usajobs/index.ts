@@ -12,6 +12,9 @@ import { dedupeCaseInsensitive } from "./sourceConfig";
 import {
   USAJOBS_EMAIL_REGEX,
   USAJOBS_KEY_REGEX,
+  USAJOBS_MAX_KEYWORDS,
+  USAJOBS_MAX_LOCATIONS,
+  USAJOBS_MAX_TITLES,
   type UsajobsCredentials,
   UsajobsFailure,
   UsajobsFetchOptions,
@@ -127,27 +130,33 @@ const WHO_MAY_APPLY_WIRE = {
 const join = (values: (string | number)[]) => values.join(";");
 
 // Derives the request filters from a saved config: the shared targetTitles
-// become the PositionTitle searches and the shared locations the LocationName
-// list (the config stores no separate server-side title/location).
+// become the PositionTitle searches, the shared keywords the Keyword searches
+// (only used when there are no titles, see UsajobsFilters.keywords) and the
+// shared locations the LocationName list (the config stores no separate
+// server-side title/keyword/location).
 export function toUsajobsFilters(config: UsajobsSourceConfig): UsajobsFilters {
-  const { targetTitles, locations, ...rest } = config;
+  const { targetTitles, keywords, locations, ...rest } = config;
   const filters: UsajobsFilters = rest;
   const titles = dedupeCaseInsensitive(targetTitles ?? []);
+  const words = dedupeCaseInsensitive(keywords ?? []);
   const places = dedupeCaseInsensitive(locations ?? []);
   if (titles.length) filters.positionTitles = titles;
+  if (words.length) filters.keywords = words;
   if (places.length) filters.locationName = places;
   return filters;
 }
 
 // Translates one search into [name, value] pairs in a fixed order. Absent
 // filters are omitted. Values are encoded by buildUsajobsUrl. PositionTitle
-// takes a single value, so the title of THIS search is passed explicitly
-// (f.positionTitles lists all of them; the fetcher runs one search each).
+// and Keyword take a single value, so the title / keyword of THIS search are
+// passed explicitly (f.positionTitles / f.keywords list them all; the fetcher
+// runs one search each, see searchPlan).
 export function buildUsajobsParams(
   f: UsajobsFilters,
   page: number,
   pageSize: number,
   positionTitle?: string,
+  keyword?: string,
 ): [string, string][] {
   const p: [string, string][] = [];
   const add = (name: string, value: string | number | undefined) => {
@@ -157,9 +166,9 @@ export function buildUsajobsParams(
     if (values?.length) add(name, join(values));
   };
 
-  add("Keyword", f.keyword);
+  add("Keyword", keyword);
   add("PositionTitle", positionTitle);
-  addList("LocationName", f.locationName);
+  addList("LocationName", f.locationName?.slice(0, USAJOBS_MAX_LOCATIONS));
   add("Radius", f.radius);
   addList("Organization", f.organization);
   addList("JobCategoryCode", f.jobCategoryCode);
@@ -188,6 +197,57 @@ export function buildUsajobsParams(
   return p;
 }
 
+// One server-side search of a run: a title and/or a keyword.
+interface UsajobsSearch {
+  title?: string;
+  keyword?: string;
+}
+
+// The searches a run makes. Titles take precedence: one search per title (the
+// first USAJOBS_MAX_TITLES), and the keywords then only rank results
+// client-side (a title x keyword product would multiply requests). With no
+// titles, one search per keyword (the first USAJOBS_MAX_KEYWORDS). With
+// neither, a single search on the other filters. Entries left out of the
+// searches still rank results; see searchLimitNotes.
+export function searchPlan(f: UsajobsFilters): UsajobsSearch[] {
+  if (f.positionTitles?.length) {
+    return f.positionTitles
+      .slice(0, USAJOBS_MAX_TITLES)
+      .map((title) => ({ title }));
+  }
+  if (f.keywords?.length) {
+    return f.keywords
+      .slice(0, USAJOBS_MAX_KEYWORDS)
+      .map((keyword) => ({ keyword }));
+  }
+  return [{}];
+}
+
+// Run-log notes for entries that are not sent to USAJOBS because of the
+// per-request limits above. Soft notes, not failures: the run status does not
+// change, and every entry still ranks results.
+export function searchLimitNotes(f: UsajobsFilters): string[] {
+  const notes: string[] = [];
+  const titles = f.positionTitles?.length ?? 0;
+  const keywords = f.keywords?.length ?? 0;
+  const places = f.locationName?.length ?? 0;
+  if (titles > USAJOBS_MAX_TITLES) {
+    notes.push(
+      `Searched USAJOBS for the first ${USAJOBS_MAX_TITLES} of ${titles} titles; all ${titles} still rank results`,
+    );
+  } else if (!titles && keywords > USAJOBS_MAX_KEYWORDS) {
+    notes.push(
+      `Searched USAJOBS for the first ${USAJOBS_MAX_KEYWORDS} of ${keywords} keywords; all ${keywords} still rank results`,
+    );
+  }
+  if (places > USAJOBS_MAX_LOCATIONS) {
+    notes.push(
+      `Searched USAJOBS in the first ${USAJOBS_MAX_LOCATIONS} of ${places} locations; all ${places} still apply to your location filter`,
+    );
+  }
+  return notes;
+}
+
 // encodeURIComponent (not URLSearchParams) so spaces are %20, as in the
 // official examples, rather than '+'.
 export function buildUsajobsUrl(
@@ -195,8 +255,9 @@ export function buildUsajobsUrl(
   page: number,
   pageSize: number = APP_CONSTANTS.USAJOBS_PAGE_SIZE,
   positionTitle?: string,
+  keyword?: string,
 ): string {
-  const query = buildUsajobsParams(f, page, pageSize, positionTitle)
+  const query = buildUsajobsParams(f, page, pageSize, positionTitle, keyword)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
   return `${APP_CONSTANTS.USAJOBS_BASE_URL}?${query}`;
@@ -336,9 +397,15 @@ export async function fetchUsajobsJobs(
 
   async function fetchPage(
     page: number,
-    title: string | undefined,
+    search: UsajobsSearch,
   ): Promise<PageResult> {
-    const url = buildUsajobsUrl(filters, page, pageSize, title);
+    const url = buildUsajobsUrl(
+      filters,
+      page,
+      pageSize,
+      search.title,
+      search.keyword,
+    );
     for (let attempt = 1; ; attempt++) {
       if (controller.signal.aborted) return handleAbort();
       const canRetry = attempt < maxAttempts;
@@ -442,15 +509,13 @@ export async function fetchUsajobsJobs(
   const keyOf = (it: UsajobsSearchItem) =>
     String(it?.MatchedObjectId ?? it?.MatchedObjectDescriptor?.PositionURI ?? "");
 
-  // PositionTitle takes one value, so each title is its own paginated search.
-  // They share the deadline, retry policy, page/result ceilings and the merged
-  // dedupe set. No titles means one search without PositionTitle.
-  const titles: (string | undefined)[] = filters.positionTitles?.length
-    ? filters.positionTitles
-    : [undefined];
+  // PositionTitle and Keyword take one value, so each title (or, with no
+  // titles, each keyword) is its own paginated search. They share the
+  // deadline, retry policy, page/result ceilings and the merged dedupe set.
+  const searches = searchPlan(filters);
 
   // One paginated search; mutates the shared state above.
-  async function runSearch(title: string | undefined) {
+  async function runSearch(search: UsajobsSearch) {
     // Per-search: a server that ignores `Page` returns the same rows, and
     // each search counts its own rows against its own SearchResultCountAll.
     const seenInSearch = new Set<string>();
@@ -458,7 +523,7 @@ export async function fetchUsajobsJobs(
     searchesRun++;
 
     for (let page = 1; ; page++) {
-      const result = await fetchPage(page, title);
+      const result = await fetchPage(page, search);
       if (!result.ok) {
         failure ??= result.failure;
         const k = result.failure.kind;
@@ -524,7 +589,7 @@ export async function fetchUsajobsJobs(
   }
 
   try {
-    for (let i = 0; i < titles.length && !stopAll; i++) {
+    for (let i = 0; i < searches.length && !stopAll; i++) {
       if (i > 0) {
         // Searches remain but a shared ceiling is already used up.
         if (
@@ -542,7 +607,7 @@ export async function fetchUsajobsJobs(
           break;
         }
       }
-      await runSearch(titles[i]);
+      await runSearch(searches[i]);
     }
   } finally {
     clearTimeout(timer);
@@ -588,7 +653,8 @@ export async function searchUsajobsJobs(ctx: {
     };
   }
 
-  const result = await fetchUsajobsJobs(credentials, toUsajobsFilters(ctx.config), {
+  const filters = toUsajobsFilters(ctx.config);
+  const result = await fetchUsajobsJobs(credentials, filters, {
     signal: ctx.signal,
   });
   const fetched = result.jobs.length + result.skipped;
@@ -599,14 +665,17 @@ export async function searchUsajobsJobs(ctx: {
       : [],
     // A deliberate cap (like ATS_LISTING_CAP), not a failure: log it and keep
     // the run "completed".
-    notes: result.truncated
-      ? [
-          `Result ceiling reached: fetched ${fetched}${
-            result.totalAvailable !== undefined
-              ? ` of ${result.totalAvailable}`
-              : ""
-          } matching announcements - narrow your filters to see the rest`,
-        ]
-      : [],
+    notes: [
+      ...searchLimitNotes(filters),
+      ...(result.truncated
+        ? [
+            `Result ceiling reached: fetched ${fetched}${
+              result.totalAvailable !== undefined
+                ? ` of ${result.totalAvailable}`
+                : ""
+            } matching announcements - narrow your filters to see the rest`,
+          ]
+        : []),
+    ],
   };
 }

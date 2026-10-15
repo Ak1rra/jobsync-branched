@@ -13,10 +13,11 @@ import type { RankingFields } from "./types";
 interface TargetingFieldsProps<T extends RankingFields> {
   value: T;
   onChange: (next: T) => void;
-  // Boards that render the title and/or location fields themselves (USAJOBS,
-  // where they are also the server-side search) hide the duplicates here. The
-  // location group includes the strict-location toggle. Omitted: all shown.
-  hide?: { titles?: boolean; locations?: boolean };
+  // Boards that render the title, keyword and/or location fields themselves
+  // (USAJOBS, where they are also the server-side search) hide the duplicates
+  // here. The location group includes the strict-location toggle. Omitted: all
+  // shown.
+  hide?: { titles?: boolean; keywords?: boolean; locations?: boolean };
 }
 
 // "Only show jobs in these locations" switch; shared by TargetingFields and
@@ -77,22 +78,24 @@ export function TargetingFields<T extends RankingFields>({
         />
       )}
 
-      <EntityStringChipInput
-        label="Keywords / skills"
-        placeholder="e.g., React"
-        noun="keyword"
-        description="Optional. Matched against title and description."
-        values={value.keywords ?? []}
-        onChange={(next) => onChange({ ...value, keywords: next })}
-        loadOptions={async () => {
-          const res = await getAllTags();
-          return Array.isArray(res) ? res : [];
-        }}
-        createOption={async (lbl) => {
-          const res = await createTag(lbl);
-          return res?.success ? res.data : null;
-        }}
-      />
+      {!hide?.keywords && (
+        <EntityStringChipInput
+          label="Keywords / skills"
+          placeholder="e.g., React"
+          noun="keyword"
+          description="Optional. Matched against title and description."
+          values={value.keywords ?? []}
+          onChange={(next) => onChange({ ...value, keywords: next })}
+          loadOptions={async () => {
+            const res = await getAllTags();
+            return Array.isArray(res) ? res : [];
+          }}
+          createOption={async (lbl) => {
+            const res = await createTag(lbl);
+            return res?.success ? res.data : null;
+          }}
+        />
+      )}
 
       {noSignal && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">

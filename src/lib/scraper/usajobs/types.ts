@@ -70,19 +70,30 @@ export type UsajobsSortDirection = (typeof USAJOBS_SORT_DIRECTIONS)[number];
 export const USAJOBS_FIELDS = ["Min", "Full"] as const;
 export type UsajobsFields = (typeof USAJOBS_FIELDS)[number];
 
-// Caps on the shared title/location lists a USAJOBS config carries. Titles
-// are capped low because PositionTitle takes a single value, so each title is
-// its own search request. Locations are one semicolon-joined LocationName.
+// How many of the shared title/keyword/location entries are SENT to USAJOBS.
+// The saved lists are not capped (every entry ranks results client-side); the
+// request is. PositionTitle takes a single value, so each title is its own
+// search request. Keywords are limited alike: with no titles, each keyword is
+// its own search (Keyword's multi-word behavior is "all of the words", so
+// joining them would AND them). Locations are one semicolon-joined
+// LocationName; the docs state no limit, so the count is bounded to keep the
+// URL (up to 100 characters per entry) a sane size.
 export const USAJOBS_MAX_TITLES = 5;
+export const USAJOBS_MAX_KEYWORDS = 5;
 export const USAJOBS_MAX_LOCATIONS = 10;
 
 // Server-side filters, one-to-one with the documented query parameters
 // (camelCase of the API name), as handed to the fetcher. Everything is
 // optional; the translator omits absent values. See buildUsajobsParams in
-// ./index.ts. The saved config does NOT store positionTitles/locationName: it
-// keeps the shared targetTitles/locations and toUsajobsFilters derives these.
+// ./index.ts. The saved config does NOT store keywords/positionTitles/
+// locationName as filters: it keeps the shared keywords/targetTitles/locations
+// and toUsajobsFilters derives these.
 export interface UsajobsFilters {
-  keyword?: string;
+  // The API's Keyword matches "all of the words specified" and documents no
+  // multi-value form, so keywords are never joined into one value. They drive
+  // the server-side search only when there are no positionTitles (one search
+  // per keyword); otherwise they only rank results client-side.
+  keywords?: string[];
   // The API's PositionTitle documents a single value (no multi-value
   // delimiter), so the fetcher runs one search per title and merges them.
   positionTitles?: string[];
@@ -219,3 +230,25 @@ export interface UsajobsFetchOptions {
   signal?: AbortSignal; // external (user cancel); aborts with an AbortError
   now?: () => number; // clock for the client-side closed-announcement filter
 }
+
+// Display labels for the hiring-path codes: the wizard option list and the
+// saved job description both use them.
+export const HIRING_PATH_LABELS: Record<UsajobsHiringPath, string> = {
+  public: "Open to the public",
+  vet: "Veterans",
+  nguard: "National Guard & Reserves",
+  disability: "Individuals with disabilities",
+  native: "Native Americans",
+  mspouse: "Military spouses",
+  student: "Students",
+  ses: "Senior executives",
+  peace: "Peace Corps & AmeriCorps VISTA",
+  overseas: "Family of overseas employees",
+  "fed-internal-search": "Federal employees (internal search)",
+  graduates: "Recent graduates",
+  "fed-excepted": "Federal employees (excepted service)",
+  "fed-competitive": "Federal employees (competitive service)",
+  "fed-transition": "Career transition (CTAP, ICTAP, RPL)",
+  land: "Land & base management",
+  "special-authorities": "Special authorities",
+};

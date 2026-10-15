@@ -31,7 +31,7 @@ describe("usajobs board registration", () => {
 
 describe("CreateAutomationSchema (usajobs)", () => {
   it("accepts a keyword-only query and needs no companies", () => {
-    expect(create({ keyword: "nurse" }).success).toBe(true);
+    expect(create({ keywords: ["nurse"] }).success).toBe(true);
   });
 
   it("rejects a missing usajobs config block", () => {
@@ -55,7 +55,6 @@ describe("CreateAutomationSchema (usajobs)", () => {
 
   it("accepts every documented filter together", () => {
     const result = create({
-      keyword: "software",
       locations: ["Atlanta, Georgia", "Norfolk Virginia"],
       radius: 75,
       organization: ["TR", "AF"],
@@ -84,65 +83,72 @@ describe("CreateAutomationSchema (usajobs)", () => {
   });
 
   it.each([
-    ["unknown hiring path", { keyword: "x", hiringPath: ["everyone"] }],
-    ["bad whoMayApply", { keyword: "x", whoMayApply: "nobody" }],
-    ["schedule code out of range", { keyword: "x", positionScheduleTypeCode: [7] }],
-    ["undocumented clearance code 6", { keyword: "x", securityClearanceRequired: [6] }],
-    ["datePosted over 60", { keyword: "x", datePosted: 61 }],
-    ["negative datePosted", { keyword: "x", datePosted: -1 }],
-    ["non-integer datePosted", { keyword: "x", datePosted: 1.5 }],
-    ["unknown sort field", { keyword: "x", sortField: "vibes" }],
-    ["bad sort direction", { keyword: "x", sortDirection: "sideways" }],
-    ["bad Fields value", { keyword: "x", fields: "Some" }],
-    ["pay grade 16", { keyword: "x", payGradeLow: "16" }],
-    ["pay grade not padded", { keyword: "x", payGradeHigh: "7" }],
+    ["unknown hiring path", { keywords: ["x"], hiringPath: ["everyone"] }],
+    ["bad whoMayApply", { keywords: ["x"], whoMayApply: "nobody" }],
+    ["schedule code out of range", { keywords: ["x"], positionScheduleTypeCode: [7] }],
+    ["undocumented clearance code 6", { keywords: ["x"], securityClearanceRequired: [6] }],
+    ["datePosted over 60", { keywords: ["x"], datePosted: 61 }],
+    ["negative datePosted", { keywords: ["x"], datePosted: -1 }],
+    ["non-integer datePosted", { keywords: ["x"], datePosted: 1.5 }],
+    ["unknown sort field", { keywords: ["x"], sortField: "vibes" }],
+    ["bad sort direction", { keywords: ["x"], sortDirection: "sideways" }],
+    ["bad Fields value", { keywords: ["x"], fields: "Some" }],
+    ["pay grade 16", { keywords: ["x"], payGradeLow: "16" }],
+    ["pay grade not padded", { keywords: ["x"], payGradeHigh: "7" }],
     ["series code not 4 digits", { jobCategoryCode: ["221"] }],
     ["series code with separator", { jobCategoryCode: ["2210;0830"] }],
     ["organization with separator", { organization: ["TR;AF"] }],
     ["organization injection", { organization: ["TR&Page=9"] }],
     ["location containing ';'", { locations: ["A;B"] }],
-    ["too many titles", { targetTitles: Array.from({ length: 6 }, (_, i) => `T${i}`) }],
     ["empty title", { targetTitles: [""] }],
     ["title too long", { targetTitles: ["x".repeat(101)] }],
-    ["empty keyword", { keyword: "   " }],
-    ["keyword too long", { keyword: "x".repeat(201) }],
-    ["too many locations", { locations: Array.from({ length: 11 }, (_, i) => `L${i}`) }],
-    ["radius without a location", { keyword: "x", radius: 25 }],
+    ["empty keyword", { keywords: [""] }],
+    ["keyword too long", { keywords: ["x".repeat(101)] }],
+    ["radius without a location", { keywords: ["x"], radius: 25 }],
     ["radius of 0", { locations: ["Reno"], radius: 0 }],
     ["radius with only titles", { targetTitles: ["Nurse"], radius: 10 }],
-    ["min pay above max pay", { keyword: "x", remunerationMinimumAmount: 90000, remunerationMaximumAmount: 50000 }],
-    ["low grade above high grade", { keyword: "x", payGradeLow: "12", payGradeHigh: "07" }],
-    ["topK over the cap", { keyword: "x", topK: 51 }],
+    ["min pay above max pay", { keywords: ["x"], remunerationMinimumAmount: 90000, remunerationMaximumAmount: 50000 }],
+    ["low grade above high grade", { keywords: ["x"], payGradeLow: "12", payGradeHigh: "07" }],
+    ["topK over the cap", { keywords: ["x"], topK: 51 }],
   ])("rejects %s", (_name, cfg) => {
     expect(create(cfg).success).toBe(false);
   });
 
-  it("accepts the maximum number of titles and locations", () => {
+  it("accepts long titles, keywords and locations lists (every entry ranks; only the first few are searched)", () => {
     expect(
       create({
-        targetTitles: Array.from({ length: 5 }, (_, i) => `T${i}`),
-        locations: Array.from({ length: 10 }, (_, i) => `L${i}`),
+        targetTitles: Array.from({ length: 8 }, (_, i) => `T${i}`),
+        keywords: Array.from({ length: 12 }, (_, i) => `K${i}`),
+        locations: Array.from({ length: 15 }, (_, i) => `L${i}`),
         radius: 10,
       }).success,
     ).toBe(true);
   });
 
-  it("no longer stores a separate positionTitle / locationName (stripped, not a criterion)", () => {
+  it("no longer stores a separate keyword / positionTitle / locationName (stripped, not a criterion)", () => {
+    expect(create({ keyword: "nurse" }).success).toBe(false);
     expect(create({ positionTitle: "Nurse" }).success).toBe(false);
     expect(create({ locationName: ["Reno"] }).success).toBe(false);
     const parsed = UsajobsSourceConfigSchema.safeParse({
-      keyword: "x",
+      keywords: ["x"],
+      keyword: "y",
       positionTitle: "Nurse",
       locationName: ["Reno"],
     });
-    expect(parsed.success && Object.keys(parsed.data)).toEqual(["keyword"]);
+    expect(parsed.success && Object.keys(parsed.data)).toEqual(["keywords"]);
   });
 
-  it("reports a criterion error on the keyword path", () => {
+  it("counts keywords as a search criterion", () => {
+    expect(create({ keywords: ["a", "b", "c", "d", "e", "f"] }).success).toBe(true);
+    expect(create({ keywords: [] }).success).toBe(false);
+  });
+
+  it("reports a criterion error on the keywords path", () => {
     const result = UsajobsSourceConfigSchema.safeParse({});
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0].message).toMatch(/search criterion/);
+      expect(result.error.issues[0].path).toEqual(["keywords"]);
     }
   });
 });
@@ -151,7 +157,7 @@ describe("UpdateAutomationSchema (usajobs)", () => {
   it("accepts a usajobs update with its config", () => {
     const result = UpdateAutomationSchema.safeParse({
       jobBoard: "usajobs",
-      sourceConfig: { usajobs: { keyword: "nurse" } },
+      sourceConfig: { usajobs: { keywords: ["nurse"] } },
     });
     expect(result.success).toBe(true);
   });
@@ -185,7 +191,7 @@ describe("other boards are unchanged", () => {
     const result = CreateAutomationSchema.safeParse({
       ...base,
       jobBoard: "greenhouse",
-      sourceConfig: { usajobs: { keyword: "nurse" } },
+      sourceConfig: { usajobs: { keywords: ["nurse"] } },
     });
     expect(result.success).toBe(false);
   });
@@ -249,11 +255,12 @@ describe("apiKeySaveSchema (usajobs credentials)", () => {
 describe("parseUsajobsConfig (run-time re-validation)", () => {
   it("returns the query plus shared ranking fields with defaults", () => {
     const cfg = parseUsajobsConfig(
-      JSON.stringify({ usajobs: { keyword: "nurse", targetTitles: ["Nurse", "RN"] } }),
+      JSON.stringify({ usajobs: { keywords: ["nurse"], targetTitles: ["Nurse", "RN"] } }),
     )!;
-    expect(cfg.query.keyword).toBe("nurse");
+    expect(cfg.query.keywords).toEqual(["nurse"]);
+    expect(cfg.query).not.toHaveProperty("keyword");
     expect(cfg.ranking).toMatchObject({
-      keywords: ["nurse"], // the server keyword also feeds ranking
+      keywords: ["nurse"], // the same list is the search and the ranking terms
       targetTitles: ["Nurse", "RN"],
       locations: [],
       strictLocation: false,
@@ -273,7 +280,7 @@ describe("parseUsajobsConfig (run-time re-validation)", () => {
     expect(cfg.ranking.locations).toEqual(["Denver", "Reno"]);
   });
 
-  describe("legacy positionTitle / locationName", () => {
+  describe("legacy keyword / positionTitle / locationName", () => {
     const parse = (usajobs: unknown) =>
       parseUsajobsConfig(JSON.stringify({ usajobs }));
 
@@ -288,11 +295,32 @@ describe("parseUsajobsConfig (run-time re-validation)", () => {
       })!;
       expect(cfg.query).not.toHaveProperty("positionTitle");
       expect(cfg.query).not.toHaveProperty("locationName");
-      expect(cfg.query.targetTitles).toEqual(["Engineer", "IT Specialist"]);
-      expect(cfg.query.locations).toEqual(["Reno", "Denver, Colorado"]);
+      expect(cfg.query.targetTitles).toEqual(["IT Specialist", "Engineer"]);
+      expect(cfg.query.locations).toEqual(["Denver, Colorado", "Reno"]);
       expect(cfg.query.radius).toBe(30);
-      expect(cfg.ranking.targetTitles).toEqual(["Engineer", "IT Specialist"]);
-      expect(cfg.ranking.locations).toEqual(["Reno", "Denver, Colorado"]);
+      expect(cfg.ranking.targetTitles).toEqual(["IT Specialist", "Engineer"]);
+      expect(cfg.ranking.locations).toEqual(["Denver, Colorado", "Reno"]);
+    });
+
+    it("folds a legacy keyword into keywords (deduped) and feeds it to ranking", () => {
+      const cfg = parse({
+        keyword: "data scientist",
+        keywords: ["Python", "DATA SCIENTIST"],
+        targetTitles: ["Analyst"],
+      })!;
+      expect(cfg.query).not.toHaveProperty("keyword");
+      expect(cfg.query.keywords).toEqual(["DATA SCIENTIST", "Python"]);
+      expect(cfg.ranking.keywords).toEqual(["DATA SCIENTIST", "Python"]);
+      expect(parse({ keyword: "nurse" })!.query.keywords).toEqual(["nurse"]);
+    });
+
+    it("keeps the legacy keyword first and every existing ranking keyword", () => {
+      const cfg = parse({
+        keyword: "Legacy",
+        keywords: ["a", "b", "c", "d", "e", "f", "g"],
+      })!;
+      expect(cfg.query.keywords).toEqual(["Legacy", "a", "b", "c", "d", "e", "f", "g"]);
+      expect(cfg.ranking.keywords).toHaveLength(8);
     });
 
     it("keeps a legacy-only title/location config runnable (was the only criterion)", () => {
@@ -312,19 +340,20 @@ describe("parseUsajobsConfig (run-time re-validation)", () => {
       expect(cfg.query.locations).toEqual(["Denver", "reno"]);
     });
 
-    it("keeps the legacy search title when folding would exceed the cap", () => {
+    it("keeps the legacy search title first, ahead of the entries that follow it", () => {
       const cfg = parse({
         positionTitle: "Search Title",
         targetTitles: ["A", "B", "C", "D", "E"],
       })!;
-      expect(cfg.query.targetTitles).toEqual(["A", "B", "C", "D", "Search Title"]);
+      expect(cfg.query.targetTitles).toEqual(["Search Title", "A", "B", "C", "D", "E"]);
+      expect(cfg.ranking.targetTitles).toHaveLength(6);
     });
   });
 
   it("honours saveUnanalyzed=false, strictLocation and topK", () => {
     const cfg = parseUsajobsConfig(
       JSON.stringify({
-        usajobs: { keyword: "x", saveUnanalyzed: false, strictLocation: true, locations: ["DC"], topK: 5 },
+        usajobs: { keywords: ["x"], saveUnanalyzed: false, strictLocation: true, locations: ["DC"], topK: 5 },
       }),
     )!;
     expect(cfg.ranking).toMatchObject({ saveUnanalyzed: false, strictLocation: true, topK: 5 });
@@ -335,7 +364,7 @@ describe("parseUsajobsConfig (run-time re-validation)", () => {
     ["not JSON", "{oops"],
     ["no usajobs key", JSON.stringify({ greenhouse: { companies: [] } })],
     ["no criterion", JSON.stringify({ usajobs: {} })],
-    ["tampered value", JSON.stringify({ usajobs: { keyword: "x", hiringPath: ["a;Page=9"] } })],
+    ["tampered value", JSON.stringify({ usajobs: { keywords: ["x"], hiringPath: ["a;Page=9"] } })],
   ])("returns null for %s", (_label, raw) => {
     expect(parseUsajobsConfig(raw as string | null)).toBeNull();
   });

@@ -1,6 +1,9 @@
+import { format } from "date-fns";
+import { HIRING_PATH_LABELS } from "./types";
 import type { JobDetails } from "../types";
 import { decodeHtml, flattenHtml } from "../html";
 import type {
+  UsajobsHiringPath,
   UsajobsDescriptor,
   UsajobsNamedCode,
   UsajobsRemuneration,
@@ -176,50 +179,137 @@ function applyUri(d: UsajobsDescriptor): string | undefined {
   return Array.isArray(d.ApplyURI) ? str(d.ApplyURI[0]) : str(d.ApplyURI);
 }
 
-// Compact factual header; absent fields are omitted, never invented.
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Single-line display value: collapse every run of whitespace.
+function inline(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+// Display form of a URL: the URL parser drops a default port (https :443,
+// http :80). Non-http(s) or unparseable values are omitted rather than shown.
+// Display only; the stored job url (the dedupe key) is never passed through it.
+function displayUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" || u.protocol === "http:"
+      ? u.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// "2099-12-31" -> "Dec 31, 2099" (date-fns "PP", the app's date convention).
+// Built from the calendar parts so the result does not depend on the server TZ.
+function displayDate(iso: string | undefined): string | undefined {
+  const m = iso?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? format(new Date(+m[1], +m[2] - 1, +m[3]), "PP") : undefined;
+}
+
+function hiringPathLabel(code: string): string {
+  return Object.prototype.hasOwnProperty.call(HIRING_PATH_LABELS, code)
+    ? HIRING_PATH_LABELS[code as UsajobsHiringPath]
+    : code;
+}
+
+const same = (a?: string, b?: string) =>
+  !!a && !!b && inline(a).toLowerCase() === inline(b).toLowerCase();
+
+// Non-empty cleaned lines of a text field, plus whether the source was an
+// array (array elements are real item boundaries; a string's lines are not).
+function textLines(raw: unknown): { lines: string[]; isList: boolean } {
+  const text = cleanText(raw);
+  return {
+    lines: text ? text.split("\n") : [],
+    isList: Array.isArray(raw) && raw.length > 1,
+  };
+}
+
+function section(heading: string, raw: unknown): string {
+  const { lines, isList } = textLines(raw);
+  if (!lines.length) return "";
+  const body = isList
+    ? `<ul>${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
+    : lines.map((l) => `<p>${escapeHtml(l)}</p>`).join("");
+  return `<h3>${escapeHtml(heading)}</h3>${body}`;
+}
+
+// Stored as HTML like the Greenhouse/Ashby descriptions: the job details view
+// renders it through TipTap (StarterKit), which keeps headings, lists, bold and
+// paragraphs but not line breaks inside plain text. All source text is escaped.
+// Absent fields are omitted, never invented.
 function buildDescription(d: UsajobsDescriptor, controlNumber?: string): string {
   const details = d.UserArea?.Details;
-  const hiringPath = Array.isArray(details?.HiringPath)
-    ? details.HiringPath.map((h) => str(h)).filter(Boolean).join(", ")
-    : str(details?.HiringPath);
+  const agency = str(d.OrganizationName);
+  const department = str(d.DepartmentName);
+  const subAgency = str(details?.SubAgencyName);
+  const hiringCodes = [
+    ...new Set(
+      (Array.isArray(details?.HiringPath)
+        ? details.HiringPath
+        : [details?.HiringPath]
+      )
+        .map((h) => str(h))
+        .filter((h): h is string => !!h),
+    ),
+  ];
   const telework = flag(details?.TeleworkEligible);
-  const closes = parseUsajobsDate(d.ApplicationCloseDate);
+  const closes = displayDate(parseUsajobsDate(d.ApplicationCloseDate));
+  const applyHref = displayUrl(applyUri(d));
 
   const facts: [string, string | undefined][] = [
     ["Announcement number", str(d.PositionID)],
     ["Control number", controlNumber],
-    ["Agency", str(d.OrganizationName)],
-    ["Department", str(d.DepartmentName)],
-    ["Sub-agency", str(details?.SubAgencyName)],
+    ["Agency", agency],
+    ["Department", same(department, agency) ? undefined : department],
+    [
+      "Sub-agency",
+      same(subAgency, agency) || same(subAgency, department)
+        ? undefined
+        : subAgency,
+    ],
     ["Grade", gradeRange(d)],
     ["Series", series(d)],
     ["Schedule", names(d.PositionSchedule).join(", ") || undefined],
     ["Appointment type", names(d.PositionOfferingType).join(", ") || undefined],
-    ["Hiring path", hiringPath || undefined],
+    ["Hiring path", hiringCodes.map(hiringPathLabel).join(", ") || undefined],
     ["Who may apply", str(details?.WhoMayApply?.Name)],
     ["Security clearance", str(details?.SecurityClearance)],
     [
       "Telework eligible",
       telework === undefined ? undefined : telework ? "Yes" : "No",
     ],
-    ["Closes", closes?.slice(0, 10)],
-    ["Apply", applyUri(d)],
+    ["Closes", closes],
   ];
-  const header = facts
-    .filter((f): f is [string, string] => !!f[1])
-    .map(([label, value]) => `${label}: ${value}`)
-    .join("\n");
+  const items = facts
+    .map(([label, value]) => [label, value ? inline(value) : ""] as const)
+    .filter(([, value]) => value)
+    .map(
+      ([label, value]) =>
+        `<li><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</li>`,
+    );
+  if (applyHref) {
+    const safe = escapeHtml(applyHref);
+    items.push(`<li><strong>Apply:</strong> <a href="${safe}">${safe}</a></li>`);
+  }
 
-  const sections: [string, string][] = [
-    ["Summary", cleanText(details?.JobSummary)],
-    ["Major duties", cleanText(details?.MajorDuties)],
-    ["Qualifications", cleanText(d.QualificationSummary)],
-  ];
-  const body = sections
-    .filter(([, text]) => text)
-    .map(([label, text]) => `${label}\n${text}`);
-
-  return [header, ...body].filter(Boolean).join("\n\n");
+  return [
+    items.length ? `<ul>${items.join("")}</ul>` : "",
+    section("Summary", details?.JobSummary),
+    section("Major duties", details?.MajorDuties),
+    section("Qualifications", d.QualificationSummary),
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 // Returns null for an item that cannot be saved meaningfully (no title, no

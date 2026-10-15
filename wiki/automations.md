@@ -27,7 +27,7 @@ Open **Automations** in the sidebar and click **Create Automation**. The wizard 
 2. **Search** — the companies to track, then your filters: target job titles, keywords/skills, locations, and how many listings get full AI analysis per run. This is the step that decides how useful the automation is; see the next two sections.
 3. **Resume** — the resume every discovered job is scored against. Resumes with fewer than two sections are shown greyed out with an alert icon until you fill them in under **Profile**; an attached file does not count.
 4. **Matching** — a match threshold. Only listings whose AI match score reaches it are saved; anything analyzed and scored below it is discarded.
-5. **Schedule** — the hour of the day the automation runs (server time). Only one automation may occupy an hour, so hours already taken are marked **In use** and rejected.
+5. **Schedule** — run **Daily** or **Weekly** (pick the weekday), and the hour it runs (server time). Only one automation may occupy an hour, so hours already taken are marked **In use** and rejected.
 6. **Review** — confirm and save.
 
 At least one company is required (for USAJOBS, at least one search criterion). Everything else has a working default, but defaults alone will not give you good results.
@@ -80,7 +80,7 @@ Listings only reach AI analysis if they are related to your search strongly enou
 
 ## When does it run, and can I run one now?
 
-An automation runs daily at the hour you chose, in the server's timezone, as long as its status is **active**. Open an automation to run it immediately with **Run Now** — manual runs are limited to **5 per hour**. A run in progress can be stopped with **Abort Run**.
+An automation runs at the hour you chose (daily, or on its weekday if weekly), in the server's timezone, as long as its status is **active**. Open an automation to run it immediately with **Run Now** — manual runs are limited to **5 per hour**. A run in progress can be stopped with **Abort Run**.
 
 The automation's page has three tabs: **Logs** (live output from the current or most recent run), **Discovered Jobs**, and **Run History** (past runs with counts and timings).
 
@@ -96,7 +96,7 @@ Click a job to open its details, including the AI match breakdown and, for unsco
 
 ## How do I pause, edit or delete an automation?
 
-From the list, use the **⋮** menu on any automation; from its own page, use the buttons in the header. **Pause** stops the daily schedule without losing the automation or the jobs it found — **Resume** starts it again. **Edit** reopens the wizard with everything pre-filled, which is where you go to widen filters that are returning too little.
+From the list, use the **⋮** menu on any automation; from its own page, use the buttons in the header. **Pause** stops the schedule without losing the automation or the jobs it found — **Resume** starts it again. **Edit** reopens the wizard with everything pre-filled, which is where you go to widen filters that are returning too little.
 
 **Delete** removes the automation permanently, along with its runs and discovered jobs, after a confirmation. Accept anything you want to keep first.
 

@@ -231,7 +231,7 @@ describe("UsajobsSearchStep", () => {
   it("renders the search form instead of the company picker", () => {
     render(<Harness spy={vi.fn()} />);
 
-    expect(screen.getByLabelText("Keyword")).toBeInTheDocument();
+    expect(screen.getByLabelText("Keywords / skills")).toBeInTheDocument();
     expect(screen.getByLabelText("Position titles")).toBeInTheDocument();
     expect(screen.getByLabelText("Locations")).toBeInTheDocument();
     expect(screen.getByLabelText("Agency codes")).toBeInTheDocument();
@@ -239,9 +239,11 @@ describe("UsajobsSearchStep", () => {
       screen.getByLabelText("Occupational series codes"),
     ).toBeInTheDocument();
     // Shared ranking fields are still present...
-    expect(screen.getByText("Keywords / skills")).toBeInTheDocument();
     expect(screen.getByText(/Jobs analyzed per run/)).toBeInTheDocument();
-    // ...but titles and locations appear exactly once, not a second time.
+    // ...but keywords, titles and locations appear exactly once each.
+    expect(screen.getAllByText("Keywords / skills")).toHaveLength(1);
+    expect(screen.queryByLabelText("Keyword")).toBeNull();
+    expect(screen.queryByText("Keywords")).toBeNull();
     expect(screen.queryByText("Target job titles")).toBeNull();
     expect(screen.queryByText("Position title")).toBeNull();
     expect(screen.queryByText("Search locations")).toBeNull();
@@ -263,19 +265,41 @@ describe("UsajobsSearchStep", () => {
       /at least one search criterion/i,
     );
 
-    await user.type(screen.getByLabelText("Keyword"), "nurse");
+    await user.type(screen.getByLabelText("Keywords / skills"), "nurse{Enter}");
 
-    expect(last(spy).keyword).toBe("nurse");
+    expect(last(spy).keywords).toEqual(["nurse"]);
+    expect(last(spy)).not.toHaveProperty("keyword");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("adds several keywords as chips (Enter or comma) and dedupes, with no limit", { timeout: 20000 }, async () => {
+    const spy = vi.fn();
+    render(<Harness spy={spy} />);
+    const input = screen.getByLabelText("Keywords / skills");
+
+    await user.type(input, "data scientist{Enter}");
+    await user.type(input, "Python{Enter}");
+    await user.type(input, "PYTHON{Enter}");
+    expect(last(spy).keywords).toEqual(["data scientist", "Python"]);
+    await user.type(input, "sql, r, spark{Enter}");
+    expect(last(spy).keywords).toEqual(["data scientist", "Python", "sql", "r", "spark"]);
+    // every keyword ranks results, so there is no cap on the list
+    expect(input).toBeEnabled();
+    await user.type(input, "go{Enter}");
+    expect(last(spy).keywords).toHaveLength(6);
+    expect(last(spy)).not.toHaveProperty("keyword");
+
+    await user.click(screen.getByRole("button", { name: "Remove Python" }));
+    expect(last(spy).keywords).toEqual(["data scientist", "sql", "r", "spark", "go"]);
   });
 
   it("drops a cleared filter instead of saving an empty string", { timeout: 20000 }, async () => {
     const spy = vi.fn();
-    render(<Harness initial={{ ...base, keyword: "a" }} spy={spy} />);
+    render(<Harness initial={{ ...base, targetTitles: ["a"], organization: ["AF"] }} spy={spy} />);
 
-    await user.clear(screen.getByLabelText("Keyword"));
+    await user.click(screen.getByRole("button", { name: "Remove AF" }));
 
-    expect(last(spy)).not.toHaveProperty("keyword");
+    expect(last(spy)).not.toHaveProperty("organization");
   });
 
   it("adds locations as chips and enables the radius", { timeout: 20000 }, async () => {
@@ -319,7 +343,7 @@ describe("UsajobsSearchStep", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("adds several position titles as chips, capped at five", { timeout: 20000 }, async () => {
+  it("adds several position titles as chips with no limit", { timeout: 20000 }, async () => {
     const spy = vi.fn();
     render(<Harness spy={spy} />);
     const input = screen.getByLabelText("Position titles");
@@ -332,13 +356,16 @@ describe("UsajobsSearchStep", () => {
     // a satisfied criterion: no "add a criterion" alert
     expect(screen.queryByRole("alert")).toBeNull();
 
-    for (const t of ["A", "B", "C"]) await user.type(input, `${t}{Enter}`);
-    expect(last(spy).targetTitles).toHaveLength(5);
-    expect(input).toBeDisabled();
+    for (const t of ["A", "B", "C", "D"]) await user.type(input, `${t}{Enter}`);
+    // every title ranks results; only the first five are searched at USAJOBS
+    expect(last(spy).targetTitles).toHaveLength(6);
+    expect(input).toBeEnabled();
+    expect(
+      screen.getByText(/Press Enter to add each one\. The first 5 are each searched/),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Remove A" }));
-    expect(last(spy).targetTitles).toEqual(["IT Specialist", "Data Scientist", "B", "C"]);
-    expect(input).toBeEnabled();
+    expect(last(spy).targetTitles).toEqual(["IT Specialist", "Data Scientist", "B", "C", "D"]);
   });
 
   it("toggles strict location beside the locations field, only once a location exists", { timeout: 20000 }, async () => {
@@ -358,11 +385,12 @@ describe("UsajobsSearchStep", () => {
     expect(last(spy).strictLocation).toBe(true);
   });
 
-  it("shows saved titles and locations in the one field each", () => {
+  it("shows saved keywords, titles and locations in the one field each", () => {
     render(
       <Harness
         initial={{
           ...base,
+          keywords: ["Python", "SQL"],
           targetTitles: ["Nurse", "RN"],
           locations: ["Denver"],
           radius: 10,
@@ -370,6 +398,10 @@ describe("UsajobsSearchStep", () => {
         spy={vi.fn()}
       />,
     );
+    // each chip is rendered exactly once (no second, hidden keyword field)
+    expect(screen.getAllByText("Python")).toHaveLength(1);
+    expect(screen.getAllByText("SQL")).toHaveLength(1);
+    expect(screen.getAllByText("Nurse")).toHaveLength(1);
     expect(screen.getByText("Nurse")).toBeInTheDocument();
     expect(screen.getByText("RN")).toBeInTheDocument();
     expect(screen.getByText("Denver")).toBeInTheDocument();
@@ -400,7 +432,7 @@ describe("UsajobsSearchStep", () => {
 
   it("keeps secondary filters behind More filters and edits them", { timeout: 20000 }, async () => {
     const spy = vi.fn();
-    render(<Harness initial={{ ...base, keyword: "it" }} spy={spy} />);
+    render(<Harness initial={{ ...base, keywords: ["it"] }} spy={spy} />);
 
     expect(screen.queryByLabelText("Minimum salary")).toBeNull();
     await user.click(screen.getByRole("button", { name: /more filters/i }));
@@ -421,7 +453,7 @@ describe("UsajobsSearchStep", () => {
   it("opens More filters on edit when a secondary filter is already set", () => {
     render(
       <Harness
-        initial={{ ...base, keyword: "it", remunerationMinimumAmount: 50000 }}
+        initial={{ ...base, keywords: ["it"], remunerationMinimumAmount: 50000 }}
         spy={vi.fn()}
       />,
     );
@@ -434,7 +466,7 @@ describe("UsajobsSearchStep", () => {
       <Harness
         initial={{
           ...base,
-          keyword: "it",
+          keywords: ["it"],
           remunerationMinimumAmount: 200000,
           remunerationMaximumAmount: 100000,
         }}

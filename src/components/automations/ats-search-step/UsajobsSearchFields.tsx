@@ -21,6 +21,7 @@ import {
 import {
   USAJOBS_CLEARANCE_CODES,
   USAJOBS_HIRING_PATHS,
+  USAJOBS_MAX_KEYWORDS,
   USAJOBS_MAX_LOCATIONS,
   USAJOBS_MAX_TITLES,
   USAJOBS_SCHEDULE_CODES,
@@ -49,6 +50,9 @@ import {
 const ANY = "__any";
 
 const MAX_LIST_ITEMS = 10; // mirrors the schema's per-list cap
+// The shared keyword/title/location lists have no cap (every entry ranks
+// results); only the first few are sent to USAJOBS.
+const UNLIMITED = Number.POSITIVE_INFINITY;
 
 interface StringListInputProps {
   id: string;
@@ -291,6 +295,7 @@ const seriesCode = (raw: string) => (/^\d{4}$/.test(raw) ? raw : null);
 const locationText = (raw: string) =>
   raw.includes(";") || raw.length > 100 ? null : raw;
 const titleText = (raw: string) => (raw.length > 100 ? null : raw);
+const keywordText = titleText;
 
 const toOptions = <T extends string | number>(
   values: readonly T[],
@@ -303,10 +308,10 @@ interface UsajobsSearchFieldsProps {
 }
 
 // The server-side half of a USAJOBS automation: everything here becomes a
-// parameter of the Search API request. The position titles and locations are
-// the shared targetTitles / locations (one field each): they are both the
-// search and the ranking terms. The remaining ranking fields (keywords, top-K,
-// ...) are rendered separately by the wizard step.
+// parameter of the Search API request. The keywords, position titles and
+// locations are the shared keywords / targetTitles / locations (one field
+// each): they are both the search and the ranking terms. The remaining ranking
+// fields (top-K, ...) are rendered separately by the wizard step.
 export function UsajobsSearchFields({
   value,
   onChange,
@@ -327,30 +332,28 @@ export function UsajobsSearchFields({
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <Label htmlFor="usajobs-keyword">Keyword</Label>
-        <Input
-          id="usajobs-keyword"
-          placeholder="e.g., data scientist"
-          value={value.keyword ?? ""}
-          onChange={(e) => set({ keyword: e.target.value })}
-        />
-        <p className="text-sm text-muted-foreground">
-          Searched by USAJOBS across announcement text. Add at least one of
-          keyword, position title, location, agency or series.
-        </p>
-      </div>
+      <StringListInput
+        id="usajobs-keywords"
+        label="Keywords / skills"
+        placeholder="e.g., data scientist"
+        description={`Matched against the announcement text, and used to rank results. Press Enter or comma to add each one. With no position title, the first ${USAJOBS_MAX_KEYWORDS} are each searched separately and the results merged; with a position title they only rank the results. All are used for ranking.`}
+        values={value.keywords ?? []}
+        onChange={(next) => set({ keywords: next })}
+        normalize={keywordText}
+        invalidMessage="Keywords cannot exceed 100 characters."
+        maxItems={UNLIMITED}
+      />
 
       <StringListInput
         id="usajobs-position-title"
         label="Position titles"
         placeholder="e.g., IT Specialist"
-        description={`Matched against the announcement's position title, and used to rank results. Press Enter to add each one (up to ${USAJOBS_MAX_TITLES}); each title is searched separately and the results are merged.`}
+        description={`Matched against the announcement's position title, and used to rank results. Press Enter to add each one. The first ${USAJOBS_MAX_TITLES} are each searched separately and the results merged; all are used for ranking.`}
         values={value.targetTitles ?? []}
         onChange={(next) => set({ targetTitles: next })}
         normalize={titleText}
         invalidMessage="Titles cannot exceed 100 characters."
-        maxItems={USAJOBS_MAX_TITLES}
+        maxItems={UNLIMITED}
         splitOnComma={false}
       />
 
@@ -358,12 +361,12 @@ export function UsajobsSearchFields({
         id="usajobs-location-name"
         label="Locations"
         placeholder="e.g., Washington, District of Columbia"
-        description={`Searched on USAJOBS and used to rank results. Press Enter to add each one (up to ${USAJOBS_MAX_LOCATIONS}).`}
+        description={`Searched on USAJOBS and used to rank results. Press Enter to add each one. The first ${USAJOBS_MAX_LOCATIONS} are searched; all are used for the location filter.`}
         values={value.locations ?? []}
         onChange={(next) => set({ locations: next })}
         normalize={locationText}
         invalidMessage="Locations cannot contain ';' or exceed 100 characters."
-        maxItems={USAJOBS_MAX_LOCATIONS}
+        maxItems={UNLIMITED}
         splitOnComma={false}
       />
 

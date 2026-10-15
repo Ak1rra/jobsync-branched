@@ -6,6 +6,7 @@ import type { AtsConfigValue } from "../AtsSearchStep";
 import { boardName, type UsajobsConfigValue } from "../ats-search-step/types";
 import { summarizeUsajobsFilters } from "../ats-search-step/usajobsConfig";
 import type { WizardResume } from "./wizardConfig";
+import { formatSchedule } from "@/lib/scraper/schedule";
 
 export function StepReview({
   formValues,
@@ -59,6 +60,16 @@ export function StepReview({
             : "Any"}
         </span>
       </div>
+      {usajobsConfig && (
+        <div className="flex justify-between gap-4">
+          <span className="text-muted-foreground">Keywords</span>
+          <span className="font-medium text-right">
+            {usajobsConfig.keywords?.length
+              ? usajobsConfig.keywords.join(", ")
+              : "None"}
+          </span>
+        </div>
+      )}
       <div className="flex justify-between gap-4">
         <span className="text-muted-foreground">Locations</span>
         <span className="font-medium text-right">
@@ -94,8 +105,11 @@ export function StepReview({
       <div className="flex justify-between">
         <span className="text-muted-foreground">Schedule</span>
         <span className="font-medium">
-          Daily at{" "}
-          {(formValues.scheduleHour ?? 8).toString().padStart(2, "0")}:00
+          {formatSchedule({
+            scheduleHour: formValues.scheduleHour ?? 8,
+            scheduleFrequency: formValues.scheduleFrequency,
+            scheduleDayOfWeek: formValues.scheduleDayOfWeek,
+          })}
         </span>
       </div>
     </div>

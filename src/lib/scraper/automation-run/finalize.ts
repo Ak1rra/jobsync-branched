@@ -1,7 +1,7 @@
 import db from "@/lib/db";
 import { recordRunNotifications } from "@/lib/notifications/record";
 import type { AutomationRunStatus } from "@/models/automation.model";
-import { calculateNextRunAt } from "../schedule";
+import { calculateNextRunAtFor } from "../schedule";
 import type { BoardFailure, RunnerResult } from "./types";
 
 export interface FinalizeData {
@@ -47,13 +47,15 @@ export async function finalizeRun(
     where: { id: run.automationId },
     data: {
       lastRunAt: new Date(),
-      nextRunAt: calculateNextRunAt(
-        (
-          await db.automation.findUnique({
-            where: { id: run.automationId },
-            select: { scheduleHour: true },
-          })
-        )?.scheduleHour || 8,
+      nextRunAt: calculateNextRunAtFor(
+        (await db.automation.findUnique({
+          where: { id: run.automationId },
+          select: {
+            scheduleHour: true,
+            scheduleFrequency: true,
+            scheduleDayOfWeek: true,
+          },
+        })) ?? { scheduleHour: 8 },
       ),
     },
   });

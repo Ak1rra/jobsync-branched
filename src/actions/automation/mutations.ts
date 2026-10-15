@@ -2,7 +2,7 @@
 
 import db from "@/lib/db";
 import { requireUser } from "../shared";
-import { calculateNextRunAt } from "@/lib/scraper/schedule";
+import { calculateNextRunAtFor } from "@/lib/scraper/schedule";
 import {
   CreateAutomationSchema,
   UpdateAutomationSchema,
@@ -14,6 +14,42 @@ import { isRetiredBoard } from "@/models/automation.model";
 import { APP_CONSTANTS } from "@/lib/constants";
 import { syncSchedulerState } from "@/lib/scheduler";
 import { formatError } from "./shared";
+
+// Two automations clash when they can fire in the same hour on the same day:
+// same hour, and either is daily or both are weekly on the same weekday.
+async function findScheduleClash(
+  userId: string,
+  schedule: {
+    scheduleHour: number;
+    scheduleFrequency: string;
+    scheduleDayOfWeek: number | null;
+  },
+  excludeId?: string,
+) {
+  return db.automation.findFirst({
+    where: {
+      userId,
+      scheduleHour: schedule.scheduleHour,
+      ...(schedule.scheduleFrequency === "weekly" && {
+        OR: [
+          { scheduleFrequency: "daily" },
+          {
+            scheduleFrequency: "weekly",
+            scheduleDayOfWeek: schedule.scheduleDayOfWeek,
+          },
+        ],
+      }),
+      ...(excludeId && { id: { not: excludeId } }),
+    },
+    select: { id: true },
+  });
+}
+
+function clashMessage(scheduleHour: number) {
+  return `Another automation already runs at ${scheduleHour
+    .toString()
+    .padStart(2, "0")}:00. Please choose a different time.`;
+}
 
 export async function createAutomation(input: CreateAutomationInput): Promise<{
   success: boolean;
@@ -33,17 +69,17 @@ export async function createAutomation(input: CreateAutomationInput): Promise<{
       };
     }
 
-    const scheduleClash = await db.automation.findFirst({
-      where: { userId: user.id, scheduleHour: validated.scheduleHour },
-      select: { id: true },
+    const scheduleFrequency = validated.scheduleFrequency ?? "daily";
+    const scheduleDayOfWeek =
+      scheduleFrequency === "weekly" ? (validated.scheduleDayOfWeek ?? null) : null;
+
+    const scheduleClash = await findScheduleClash(user.id, {
+      scheduleHour: validated.scheduleHour,
+      scheduleFrequency,
+      scheduleDayOfWeek,
     });
     if (scheduleClash) {
-      return {
-        success: false,
-        message: `Another automation already runs at ${validated.scheduleHour
-          .toString()
-          .padStart(2, "0")}:00. Please choose a different time.`,
-      };
+      return { success: false, message: clashMessage(validated.scheduleHour) };
     }
 
     const resume = await db.resume.findFirst({
@@ -60,7 +96,11 @@ export async function createAutomation(input: CreateAutomationInput): Promise<{
       };
     }
 
-    const nextRunAt = calculateNextRunAt(validated.scheduleHour);
+    const nextRunAt = calculateNextRunAtFor({
+      scheduleHour: validated.scheduleHour,
+      scheduleFrequency,
+      scheduleDayOfWeek,
+    });
 
     const automation = await db.automation.create({
       data: {
@@ -75,6 +115,8 @@ export async function createAutomation(input: CreateAutomationInput): Promise<{
         resumeId: validated.resumeId,
         matchThreshold: validated.matchThreshold,
         scheduleHour: validated.scheduleHour,
+        scheduleFrequency,
+        scheduleDayOfWeek,
         nextRunAt,
         status: "active",
       },
@@ -151,24 +193,38 @@ export async function updateAutomation(
       updateData.location = validated.location ?? "";
     }
 
-    if (validated.scheduleHour !== undefined) {
-      const scheduleClash = await db.automation.findFirst({
-        where: {
-          userId: user.id,
-          scheduleHour: validated.scheduleHour,
-          id: { not: id },
-        },
-        select: { id: true },
-      });
-      if (scheduleClash) {
-        return {
-          success: false,
-          message: `Another automation already runs at ${validated.scheduleHour
-            .toString()
-            .padStart(2, "0")}:00. Please choose a different time.`,
-        };
+    // Any change to the cadence moves the next run. Fields the caller left out
+    // fall back to the stored schedule.
+    if (
+      validated.scheduleHour !== undefined ||
+      validated.scheduleFrequency !== undefined ||
+      validated.scheduleDayOfWeek !== undefined
+    ) {
+      const scheduleHour = validated.scheduleHour ?? existing.scheduleHour;
+      const scheduleFrequency =
+        validated.scheduleFrequency ?? existing.scheduleFrequency ?? "daily";
+      const scheduleDayOfWeek =
+        scheduleFrequency === "weekly"
+          ? (validated.scheduleDayOfWeek ?? existing.scheduleDayOfWeek ?? null)
+          : null;
+      if (scheduleFrequency === "weekly" && scheduleDayOfWeek === null) {
+        return { success: false, message: "Choose a day of the week" };
       }
-      updateData.nextRunAt = calculateNextRunAt(validated.scheduleHour);
+      const scheduleClash = await findScheduleClash(
+        user.id,
+        { scheduleHour, scheduleFrequency, scheduleDayOfWeek },
+        id,
+      );
+      if (scheduleClash) {
+        return { success: false, message: clashMessage(scheduleHour) };
+      }
+      updateData.scheduleFrequency = scheduleFrequency;
+      updateData.scheduleDayOfWeek = scheduleDayOfWeek;
+      updateData.nextRunAt = calculateNextRunAtFor({
+        scheduleHour,
+        scheduleFrequency,
+        scheduleDayOfWeek,
+      });
     }
 
     const automation = await db.automation.update({
@@ -271,7 +327,7 @@ export async function resumeAutomation(id: string): Promise<{
       return { success: false, message: "Automation not found" };
     }
 
-    const nextRunAt = calculateNextRunAt(automation.scheduleHour);
+    const nextRunAt = calculateNextRunAtFor(automation);
 
     const updated = await db.automation.update({
       where: { id },

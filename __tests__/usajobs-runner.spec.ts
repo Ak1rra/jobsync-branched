@@ -72,14 +72,13 @@ const KEY = "SECRET-KEY-1234567890";
 const EMAIL = "jane.doe@example.com";
 
 const usajobsConfig = {
-  keyword: "information technology",
   targetTitles: [
     "IT Specialist",
     "Cybersecurity Specialist",
     "Management Analyst",
     "Biological Science Technician",
   ],
-  keywords: [],
+  keywords: ["information technology"],
   locations: [],
   strictLocation: false,
 };
@@ -95,6 +94,8 @@ const usajobsAutomation: Automation = {
   resumeId: "resume1",
   matchThreshold: 80,
   scheduleHour: 8,
+  scheduleFrequency: "daily",
+  scheduleDayOfWeek: null,
   nextRunAt: null,
   lastRunAt: null,
   status: "active",
@@ -223,7 +224,6 @@ describe("runAutomation (usajobs)", () => {
           positionTitle: "IT Specialist",
           locationName: ["Denver, Colorado", "Reno, Nevada"],
           radius: 25,
-          keywords: [],
           strictLocation: false,
         },
       }),
@@ -236,10 +236,60 @@ describe("runAutomation (usajobs)", () => {
     for (const [url] of spy.mock.calls as [string][]) {
       const q = new URL(String(url)).searchParams;
       expect(q.get("PositionTitle")).toBe("IT Specialist");
+      // the folded keyword only ranks once a title drives the searches
+      expect(q.get("Keyword")).toBeNull();
       expect(q.get("LocationName")).toBe("Denver, Colorado;Reno, Nevada");
       expect(q.get("Radius")).toBe("25");
     }
     expect(result.jobsSaved).toBeGreaterThan(0);
+  });
+
+  it("a legacy keyword-only config still runs: the keyword is folded into keywords and searched", async () => {
+    const legacy = {
+      ...usajobsAutomation,
+      sourceConfig: JSON.stringify({
+        usajobs: { keyword: "information technology", strictLocation: false },
+      }),
+    };
+    const spy = stubPages({ 1: () => res(page1), 2: () => res(page2) });
+
+    const result = await runAutomation(legacy);
+
+    expect(result.status).toBe("completed");
+    for (const [url] of spy.mock.calls as [string][]) {
+      const q = new URL(String(url)).searchParams;
+      expect(q.get("Keyword")).toBe("information technology");
+      expect(q.get("PositionTitle")).toBeNull();
+    }
+    expect(result.jobsSaved).toBeGreaterThan(0);
+  });
+
+  it("searches the first 5 of 7 titles, logs a note, and still completes", async () => {
+    const seven = {
+      ...usajobsAutomation,
+      sourceConfig: JSON.stringify({
+        usajobs: {
+          ...usajobsConfig,
+          targetTitles: Array.from({ length: 7 }, (_, i) => `Title ${i + 1}`),
+        },
+      }),
+    };
+    const spy = stubPages({ 1: () => res(page1), 2: () => res(page2) });
+    const logSpy = vi.spyOn(automationLogger, "log");
+
+    const result = await runAutomation(seven);
+
+    expect(result.status).toBe("completed");
+    expect(result.errorMessage).toBeUndefined();
+    const titles = new Set(
+      spy.mock.calls.map((c) => new URL(String(c[0])).searchParams.get("PositionTitle")),
+    );
+    expect(titles).toEqual(new Set(["Title 1", "Title 2", "Title 3", "Title 4", "Title 5"]));
+    expect(
+      logSpy.mock.calls.some((c) =>
+        /first 5 of 7 titles; all 7 still rank results/.test(String(c[2])),
+      ),
+    ).toBe(true);
   });
 
   it("sends the credentials as headers on every request", async () => {
@@ -251,7 +301,10 @@ describe("runAutomation (usajobs)", () => {
       expect(h["User-Agent"]).toBe(EMAIL);
       expect(h.Host).toBe("data.usajobs.gov");
     }
-    expect(String(spy.mock.calls[0][0])).toContain("Keyword=information%20technology");
+    // Titles drive the searches, so the keywords only rank (no title x keyword
+    // product of requests).
+    expect(String(spy.mock.calls[0][0])).toContain("PositionTitle=IT%20Specialist");
+    expect(String(spy.mock.calls[0][0])).not.toContain("Keyword=");
   });
 
   it("persists type, workplace and the posting's close date on the job record", async () => {
@@ -265,7 +318,7 @@ describe("runAutomation (usajobs)", () => {
     expect(ft.jobType).toBe("FT");
     expect(ft.workplaceType).toBeNull();
     expect(ft.dueDate).toEqual(new Date("2099-12-31T23:59:59.997Z"));
-    expect(ft.description).toContain("Announcement number: DE-12345678-26-ABC");
+    expect(ft.description).toContain("<strong>Announcement number:</strong> DE-12345678-26-ABC");
 
     const temp = byUrl["https://www.usajobs.gov/job/812345601"];
     expect(temp.jobType).toBe("C");

@@ -1,5 +1,4 @@
 import type {
-  UsajobsHiringPath,
   UsajobsSortDirection,
   UsajobsSortField,
   UsajobsWhoMayApply,
@@ -9,25 +8,8 @@ import type {
 // lib/scraper/usajobs/types.ts (shared with the schema); keying these records
 // by those unions makes a newly added code a compile error here.
 
-export const HIRING_PATH_LABELS: Record<UsajobsHiringPath, string> = {
-  public: "Open to the public",
-  vet: "Veterans",
-  nguard: "National Guard & Reserves",
-  disability: "Individuals with disabilities",
-  native: "Native Americans",
-  mspouse: "Military spouses",
-  student: "Students",
-  ses: "Senior executives",
-  peace: "Peace Corps & AmeriCorps VISTA",
-  overseas: "Family of overseas employees",
-  "fed-internal-search": "Federal employees (internal search)",
-  graduates: "Recent graduates",
-  "fed-excepted": "Federal employees (excepted service)",
-  "fed-competitive": "Federal employees (competitive service)",
-  "fed-transition": "Career transition (CTAP, ICTAP, RPL)",
-  land: "Land & base management",
-  "special-authorities": "Special authorities",
-};
+// Lives with the codes (the job-description mapper uses it too).
+export { HIRING_PATH_LABELS } from "@/lib/scraper/usajobs/types";
 
 export const WHO_MAY_APPLY_LABELS: Record<UsajobsWhoMayApply, string> = {
   public: "Public",

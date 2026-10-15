@@ -44,7 +44,7 @@ export function cleanUsajobsConfig(cfg: UsajobsSourceConfig): UsajobsSourceConfi
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  keyword: "Search criteria",
+  keywords: "Keywords",
   targetTitles: "Position titles",
   locations: "Locations",
   radius: "Radius",
@@ -82,7 +82,10 @@ export function usajobsIssues(cfg: UsajobsSourceConfig): UsajobsIssue[] {
     // The criterion message already names the whole rule; others get a prefix.
     issues.push({
       field,
-      message: key === "keyword" ? issue.message : `${field}: ${issue.message}`,
+      message:
+        issue.code === "custom" && key === "keywords"
+          ? issue.message
+          : `${field}: ${issue.message}`,
     });
   }
   return issues;
@@ -96,7 +99,6 @@ export function isUsajobsConfigValid(cfg: UsajobsSourceConfig): boolean {
 // form uses it to open the secondary filter group on edit.
 const PRIMARY_KEYS = new Set<string>([
   ...RANKING_KEYS,
-  "keyword",
   "radius",
   "organization",
   "jobCategoryCode",
@@ -131,10 +133,9 @@ export function summarizeUsajobsFilters(
     if (value) rows.push({ label, value });
   };
 
-  add("Keyword", cfg.keyword);
-  // Titles and locations are the shared targetTitles / locations, which the
-  // review and detail views already list; only the USAJOBS-specific radius
-  // that goes with the locations is added here.
+  // Keywords, titles and locations are the shared keywords / targetTitles /
+  // locations, which the review and detail views already list; only the
+  // USAJOBS-specific radius that goes with the locations is added here.
   add("Radius", cfg.locations?.length && cfg.radius ? String(cfg.radius) : undefined);
   add("Agency codes", list(cfg.organization));
   add("Occupational series", list(cfg.jobCategoryCode));

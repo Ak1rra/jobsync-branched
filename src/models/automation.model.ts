@@ -60,12 +60,13 @@ export interface AshbySourceConfig
 // The server-side filters (UsajobsFilters) narrow the API query; the shared
 // targetTitles/keywords/locations/strictLocation/topK/saveUnanalyzed fields
 // drive the same client-side ranking pipeline as the other boards. The shared
-// targetTitles and locations are ALSO the server-side title/location search
-// (single source of truth), so the filters' own positionTitles/locationName
-// are derived at request time and never stored.
+// targetTitles, keywords and locations are ALSO the server-side title/keyword/
+// location search (single source of truth), so the filters' own
+// positionTitles/keywords/locationName are derived at request time and never
+// stored.
 export interface UsajobsSourceConfig
   extends Omit<GreenhouseSourceConfig, "companies">,
-    Omit<UsajobsFilters, "positionTitles" | "locationName"> {}
+    Omit<UsajobsFilters, "positionTitles" | "keywords" | "locationName"> {}
 
 export interface SourceConfig {
   greenhouse?: GreenhouseSourceConfig;
@@ -106,6 +107,8 @@ export interface Automation {
   resumeId: string;
   matchThreshold: number;
   scheduleHour: number;
+  scheduleFrequency: "daily" | "weekly";
+  scheduleDayOfWeek: number | null;
   nextRunAt: Date | null;
   lastRunAt: Date | null;
   status: AutomationStatus;

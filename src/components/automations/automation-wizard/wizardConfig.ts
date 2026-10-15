@@ -51,6 +51,9 @@ export const HOURS = Array.from({ length: 24 }, (_, i) => ({
   label: `${i.toString().padStart(2, "0")}:00`,
 }));
 
+// Weekday preselected when the user switches a schedule to weekly (Monday).
+export const DEFAULT_WEEKLY_DAY = 1;
+
 export function parseEditSourceConfig(
   sc?: string | null,
 ): CreateAutomationInput["sourceConfig"] | undefined {
